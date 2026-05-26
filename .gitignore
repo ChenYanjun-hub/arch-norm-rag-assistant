@@ -1,0 +1,84 @@
+# ──────────────────────────────────────────────
+# 建景规规范知识问答助手 · .gitignore
+# CLAUDE.md H.3 必备项
+# ──────────────────────────────────────────────
+
+# ── 环境变量（绝不入库）──
+.env
+.env.local
+.env.*.local
+*.env
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+env/
+.Python
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ── Node ──
+node_modules/
+dist/
+.next/
+.turbo/
+*.tsbuildinfo
+
+# ── 数据（避免误传规范 PDF 等大文件）──
+backend/data/specs/
+backend/data/specs
+backend/data/chunks/*.json
+backend/data/chunks/
+backend/data/*.db
+backend/data/*.db-*
+
+# ── 评测结果（手动决定是否入库）──
+backend/data/eval/results/
+
+# ── IDE ──
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── OS ──
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── 日志 ──
+*.log
+logs/
+
+# ── 模型缓存（HuggingFace 等大文件）──
+.cache/
+models/
+
+# ──────────────────────────────────────────────
+# 项目专属排除
+# ──────────────────────────────────────────────
+
+# 规范库 PDF（不入 Git，与 backend/data/specs/ 软链接同源）
+/规范库/
+
+# 原始文档归档（已迁移到 docs/，避免双份入库）
+/md/
+
+# 开发参考资料（设计稿、临时图表、Word 草稿）
+/claude\ design/
+/csv/
+/html/
+/word/
+/图片/
+
+# Claude Code 本地配置
+.claude/settings.local.json
+

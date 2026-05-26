@@ -1,0 +1,38 @@
+# ──────────────────────────────────────────────
+# 建景规规范知识问答助手 · 后端依赖（CLAUDE.md B.1 已锁定）
+# 禁止未经讨论新增、替换或删除任何依赖。
+# ──────────────────────────────────────────────
+
+# Web 框架 & ASGI
+fastapi>=0.115.0,<0.120.0
+uvicorn[standard]>=0.32.0,<0.36.0
+python-multipart>=0.0.12       # FastAPI 表单/文件依赖
+sse-starlette>=2.1.3,<3.0.0    # SSE 流式响应
+
+# 数据校验 / 配置
+pydantic>=2.9.0,<3.0.0
+python-dotenv>=1.0.1,<2.0.0
+
+# RAG 编排
+langchain>=0.3.0,<0.4.0
+langchain-community>=0.3.0,<0.4.0
+
+# 向量库 & Embedding & Rerank
+qdrant-client>=1.12.0,<2.0.0
+sentence-transformers>=3.2.0,<4.0.0
+FlagEmbedding>=1.3.0,<2.0.0    # BGE-M3 / BGE-Reranker-v2 官方推理包
+
+# PDF 解析
+pymupdf>=1.24.0,<2.0.0         # 即 fitz
+
+# LLM（DeepSeek 走 openai 兼容协议）
+openai>=1.50.0,<2.0.0
+httpx>=0.27.0,<0.29.0          # openai 底层 / 自定义请求
+
+# 工具
+tenacity>=9.0.0,<10.0.0        # 重试装饰器
+loguru>=0.7.0,<0.8.0           # 可选：结构化日志（仍以 logging 为主）
+
+# 测试
+pytest>=8.3.0,<9.0.0
+pytest-asyncio>=0.24.0,<1.0.0
