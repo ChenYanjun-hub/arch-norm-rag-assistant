@@ -34,6 +34,8 @@ from app.core.prompts import (
 from app.rag.embedder import embed_one
 from app.rag.generator import stream_chat_sync
 from app.rag.retriever import search
+from app.services.fallback import FALLBACK_CHITCHAT, FALLBACK_OUT_OF_SCOPE
+from app.services.scenario import detect_scenario
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +87,16 @@ def run_rag_sync(
         return
 
     logger.info(f"[pipeline] query={query[:60]!r} domain={domain_filter} spec={spec_code_filter}")
+
+    # ── 场景识别短路（CLAUDE.md E.4 判定优先级）──
+    scenario = detect_scenario(query)
+    if scenario in ("chitchat", "out_of_scope"):
+        reply = FALLBACK_CHITCHAT if scenario == "chitchat" else FALLBACK_OUT_OF_SCOPE
+        for ch in reply:
+            yield {"type": "token", "data": ch}
+        yield {"type": "fallback", "data": scenario}
+        yield {"type": "done", "data": {"ttft_ms": 0, "total_ms": 0, "tokens_out": len(reply)}}
+        return
 
     # 检索
     top_k_rough = int(top_k or RETRIEVAL_CONFIG["top_k_rough"])

@@ -49,8 +49,12 @@ def health() -> dict[str, str]:
     return {"status": "ok", "version": app.version}
 
 
-# TODO(W1): 注册 chat / spec / eval 路由
-# from app.api import chat, spec, eval as eval_api
-# app.include_router(chat.router, prefix="/api")
+# ── 路由注册 ────────────────────────────────────
+from app.api import chat as chat_api  # noqa: E402
+
+app.include_router(chat_api.router, prefix="/api")
+
+# TODO(W3): 注册 spec / eval 路由
+# from app.api import spec, eval as eval_api
 # app.include_router(spec.router, prefix="/api")
 # app.include_router(eval_api.router, prefix="/api")
