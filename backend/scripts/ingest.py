@@ -1,17 +1,21 @@
-"""一次性脚本：扫描 data/specs/ 下规范 PDF → 分块 → 输出 chunks/{spec_code}.json。
+"""一次性脚本：扫描 data/specs/ 下规范 PDF → 分块 → 向量化 → 入 Qdrant。
 
-当前阶段（W1-T1）：只跑分块 + 落地 JSON。
-  - 不调用 embedder
-  - 不写入 Qdrant
-  - 不写入 SQLite
+阶段：
+  - W1-T1：分块 → JSON
+  - W1-T2（当前）：+ embed → Qdrant upsert
+  - W2 起：+ SQLite metadata 表
 
 用法：
     cd backend
+    # 完整链路（分块 + embed + upsert）
     .venv/bin/python -m scripts.ingest --file "GB50180-2018《城市居住区规划设计标准》_可搜索.pdf"
     .venv/bin/python -m scripts.ingest --all
-    .venv/bin/python -m scripts.ingest --all --rebuild   # 删除旧 chunks/ 重跑
 
-完整流水线（W1-T2 起）将追加：embed → upsert Qdrant → 写 SQLite metadata。
+    # 仅分块，不入 Qdrant（W1-T1 模式，跳过 ML 依赖）
+    .venv/bin/python -m scripts.ingest --file "..." --no-embed
+
+    # 清空 Qdrant collection 重建
+    .venv/bin/python -m scripts.ingest --all --rebuild
 """
 
 from __future__ import annotations
@@ -129,8 +133,13 @@ def write_chunks_json(chunks: list[Chunk], out_path: Path) -> None:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def process_one(pdf_path: Path, *, domain: str | None = None) -> dict:
-    """处理单个 PDF，返回统计信息。"""
+def process_one(
+    pdf_path: Path,
+    *,
+    domain: str | None = None,
+    embed: bool = True,
+) -> dict:
+    """处理单个 PDF：分块 → (可选) embed → (可选) upsert，返回统计信息。"""
     t0 = time.time()
     domain_final = domain or resolve_domain(pdf_path.name)
     if not domain_final:
@@ -147,6 +156,27 @@ def process_one(pdf_path: Path, *, domain: str | None = None) -> dict:
     out_name = f"{slugify_spec_code(spec_code)}.json"
     out_path = CHUNKS_DIR / out_name
     write_chunks_json(chunks, out_path)
+    t_chunk = time.time()
+
+    # ── 向量化 + 入 Qdrant ──
+    embed_seconds = 0.0
+    upsert_seconds = 0.0
+    if embed:
+        # 延迟 import，仅在需要时拉重型依赖
+        from app.rag.embedder import embed_texts
+        from app.rag.retriever import ensure_collection, upsert_chunks
+
+        ensure_collection()
+
+        texts = [c.text for c in chunks]
+        logger.info(f"[ingest] BGE-M3 编码 {len(texts)} 条 chunks...")
+        t_embed_start = time.time()
+        vectors = embed_texts(texts, batch_size=16)
+        embed_seconds = time.time() - t_embed_start
+
+        t_upsert_start = time.time()
+        upsert_chunks(chunks, vectors)
+        upsert_seconds = time.time() - t_upsert_start
 
     # 统计
     types = Counter(c.type for c in chunks)
@@ -166,33 +196,51 @@ def process_one(pdf_path: Path, *, domain: str | None = None) -> dict:
         "char_avg": round(sum(sizes) / len(sizes), 1),
         "out": str(out_path.relative_to(Path(settings.specs_dir).parent.parent)),
         "elapsed_s": round(elapsed, 2),
+        "chunk_seconds": round(t_chunk - t0, 2),
+        "embed_seconds": round(embed_seconds, 2),
+        "upsert_seconds": round(upsert_seconds, 2),
+        "embedded": embed,
     }
     logger.info(
         f"[ingest] ✅ {pdf_path.name} → {len(chunks)} chunks "
         f"(clause={types.get('clause', 0)}, table={types.get('table', 0)}, "
         f"formula={types.get('formula', 0)}, appendix={types.get('appendix', 0)}, "
-        f"mandatory={mandatory_count}) · {elapsed:.1f}s"
+        f"mandatory={mandatory_count}) · 总 {elapsed:.1f}s "
+        f"[chunk {t_chunk-t0:.1f}s + embed {embed_seconds:.1f}s + upsert {upsert_seconds:.1f}s]"
     )
     return stats
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="规范 PDF 分块入库（W1-T1：只跑分块到 JSON）")
+    parser = argparse.ArgumentParser(description="规范 PDF 分块 + 向量化入库（W1-T2 完整链路）")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--file", help="处理单个 PDF（传文件名，不含路径）")
     group.add_argument("--all", action="store_true", help="处理 specs/ 下全部 PDF")
     parser.add_argument(
-        "--rebuild", action="store_true", help="删除 chunks/ 旧文件后重跑"
+        "--rebuild",
+        action="store_true",
+        help="清空 chunks/ JSON + 重建 Qdrant collection 后重跑",
+    )
+    parser.add_argument(
+        "--no-embed", action="store_true", help="只分块，不调 BGE-M3 / 不写 Qdrant"
     )
     parser.add_argument(
         "--report", default=str(CHUNKS_DIR / "_ingest_report.json"), help="统计报告输出路径"
     )
     args = parser.parse_args()
 
-    if args.rebuild and CHUNKS_DIR.exists():
-        logger.info(f"[ingest] --rebuild：清空 {CHUNKS_DIR}")
-        for f in CHUNKS_DIR.glob("*.json"):
-            f.unlink()
+    embed = not args.no_embed
+
+    if args.rebuild:
+        if CHUNKS_DIR.exists():
+            logger.info(f"[ingest] --rebuild：清空 {CHUNKS_DIR}")
+            for f in CHUNKS_DIR.glob("*.json"):
+                f.unlink()
+        if embed:
+            # 重建 Qdrant collection
+            from app.rag.retriever import ensure_collection
+            logger.info("[ingest] --rebuild：重建 Qdrant collection")
+            ensure_collection(recreate=True)
 
     CHUNKS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -201,16 +249,19 @@ def main() -> int:
         if not pdf_path.exists():
             logger.error(f"文件不存在: {pdf_path}")
             return 2
-        stats = process_one(pdf_path)
+        stats = process_one(pdf_path, embed=embed)
         all_stats = [stats]
     else:
         pdfs = list_spec_pdfs()
-        logger.info(f"[ingest] 共发现 {len(pdfs)} 部 PDF（已排除 {len(INGEST_EXCLUDE_FILES)} 部）")
+        logger.info(
+            f"[ingest] 共发现 {len(pdfs)} 部 PDF（已排除 {len(INGEST_EXCLUDE_FILES)} 部）"
+            f"，embed={'ON' if embed else 'OFF'}"
+        )
         all_stats = []
         for i, pdf in enumerate(pdfs, start=1):
             logger.info(f"[ingest] ─── ({i}/{len(pdfs)}) ───")
             try:
-                all_stats.append(process_one(pdf))
+                all_stats.append(process_one(pdf, embed=embed))
             except Exception as e:
                 logger.exception(f"[ingest] ❌ {pdf.name} 失败：{e}")
                 all_stats.append({"file": pdf.name, "error": str(e)})

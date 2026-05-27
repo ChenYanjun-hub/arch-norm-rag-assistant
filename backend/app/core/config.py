@@ -36,9 +36,14 @@ class Settings:
     qwen_model: str = os.getenv("QWEN_MODEL", "qwen-max")
 
     # 向量库（Qdrant，锁定）
-    qdrant_url: str = os.getenv("QDRANT_URL", "http://localhost:6333")
+    # QDRANT_URL：HTTP(S) URL → 远程服务模式；为空 → 本地文件嵌入模式（开发期推荐）
+    qdrant_url: str = os.getenv("QDRANT_URL", "")
     qdrant_api_key: str = os.getenv("QDRANT_API_KEY", "")
     qdrant_collection: str = os.getenv("QDRANT_COLLECTION", "specs_v1")
+    # 本地文件模式的存储路径
+    qdrant_local_path: str = os.getenv(
+        "QDRANT_LOCAL_PATH", str(BACKEND_ROOT / "data" / "qdrant_local")
+    )
 
     # 元数据库（SQLite，锁定，直接用 sqlite3）
     sqlite_path: str = os.getenv(

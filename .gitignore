@@ -39,6 +39,7 @@ backend/data/chunks/*.json
 backend/data/chunks/
 backend/data/*.db
 backend/data/*.db-*
+backend/data/qdrant_local/
 
 # ── 评测结果（手动决定是否入库）──
 backend/data/eval/results/
