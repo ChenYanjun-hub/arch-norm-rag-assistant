@@ -159,6 +159,8 @@ def chunk_pdf(
     *,
     domain: str,
     source_pdf: str | None = None,
+    spec_code_override: str | None = None,
+    spec_name_override: str | None = None,
 ) -> list[Chunk]:
     """对单个 PDF 分块。
 
@@ -166,6 +168,8 @@ def chunk_pdf(
         pdf_path: PDF 文件绝对路径
         domain: 规范分类（规划 / 建筑 / 景观 / 消防）
         source_pdf: 写入 chunk metadata 的相对路径标识；默认用 pdf 文件名
+        spec_code_override: 显式提供 spec_code，跳过文件名解析（用于不规则命名）
+        spec_name_override: 显式提供 spec_name
 
     Returns:
         list[Chunk]，已应用 min/max size 规则
@@ -174,7 +178,11 @@ def chunk_pdf(
     if not pdf_path.exists():
         raise FileNotFoundError(pdf_path)
 
-    spec_code, spec_name = parse_filename(pdf_path.name)
+    if spec_code_override and spec_name_override:
+        spec_code = spec_code_override
+        spec_name = spec_name_override
+    else:
+        spec_code, spec_name = parse_filename(pdf_path.name)
     source = source_pdf or pdf_path.name
     logger.info(f"[chunker] 处理 {pdf_path.name} → {spec_code} 《{spec_name}》")
 
@@ -344,9 +352,20 @@ def _emit(
     *,
     suffix: str = "",
 ) -> None:
-    """构造并 append 一个 chunk。"""
+    """构造并 append 一个 chunk。
+
+    chunk_id 唯一性保证：若 {spec_code}#{clause} 已在 chunks 内出现，
+    自动追加 _dN 后缀（OCR 错位/章节误识别可能让同 clause 号被切多次）。
+    """
     clause = state["clause"] + suffix
-    chunk_id = f"{spec_code}#{clause}"
+    base_id = f"{spec_code}#{clause}"
+    chunk_id = base_id
+    # 单部 PDF chunks 数 < 1000，线性扫描成本可接受
+    existing_ids = {c.chunk_id for c in chunks}
+    dup_n = 1
+    while chunk_id in existing_ids:
+        chunk_id = f"{base_id}_d{dup_n}"
+        dup_n += 1
     page_start = state["page_start"] or 1
     chunks.append(
         Chunk(

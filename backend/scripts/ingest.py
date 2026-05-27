@@ -102,12 +102,26 @@ DOMAIN_BY_FILENAME_PREFIX: dict[str, str] = {
 
 
 def resolve_domain(filename: str) -> str | None:
-    """根据文件名前缀匹配 domain。匹配失败返回 None。"""
+    """根据文件名前缀匹配 domain。匹配失败返回 None。
+
+    自动 strip 前导/末尾空白，以兼容文件名前导空格的边角情况。
+    """
+    name = filename.strip()
     # 按最长前缀优先
     for prefix in sorted(DOMAIN_BY_FILENAME_PREFIX, key=len, reverse=True):
-        if filename.startswith(prefix):
+        if name.startswith(prefix):
             return DOMAIN_BY_FILENAME_PREFIX[prefix]
     return None
+
+
+# 不规则文件名手动 override：(spec_code, spec_name)
+# 当 chunker.parse_filename 解析失败时用作回退
+INGEST_FILENAME_OVERRIDES: dict[str, tuple[str, str]] = {
+    "上海市“15分钟社区生活圈”行动工作导引》.pdf": (
+        "沪规划资源（2021）",
+        "上海市15分钟社区生活圈行动工作导引",
+    ),
+}
 
 
 def list_spec_pdfs() -> list[Path]:
@@ -147,7 +161,19 @@ def process_one(
             f"无法判定 domain：{pdf_path.name}。请在 ingest.py 的 DOMAIN_BY_FILENAME_PREFIX 补充映射"
         )
 
-    chunks = chunk_pdf(pdf_path, domain=domain_final)
+    override = INGEST_FILENAME_OVERRIDES.get(pdf_path.name) or INGEST_FILENAME_OVERRIDES.get(
+        pdf_path.name.strip()
+    )
+    if override:
+        spec_code_o, spec_name_o = override
+        chunks = chunk_pdf(
+            pdf_path,
+            domain=domain_final,
+            spec_code_override=spec_code_o,
+            spec_name_override=spec_name_o,
+        )
+    else:
+        chunks = chunk_pdf(pdf_path, domain=domain_final)
     if not chunks:
         logger.warning(f"[ingest] {pdf_path.name} 未产生任何 chunk")
         return {"file": pdf_path.name, "chunks": 0, "elapsed_s": time.time() - t0}
