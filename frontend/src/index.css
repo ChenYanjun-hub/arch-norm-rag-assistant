@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+/* 全局基础样式 */
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background: #fafafa;
+  color: #1a1a1a;
+}
