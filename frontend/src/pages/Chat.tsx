@@ -155,24 +155,8 @@ export function ChatPage() {
 function EmptyState({ onPick }: { onPick: (q: string) => void }) {
   return (
     <div style={{ textAlign: 'center', padding: '60px 8px' }}>
-      <div
-        style={{
-          width: 56,
-          height: 56,
-          borderRadius: 14,
-          background: 'var(--amber)',
-          color: 'var(--sidebar)',
-          fontFamily: 'var(--font-serif)',
-          fontSize: 26,
-          fontWeight: 700,
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          marginBottom: 18,
-          boxShadow: '0 6px 24px rgba(180,121,58,0.18)',
-        }}
-      >
-        建
+      <div className="cn-brand-mark-lg" style={{ marginBottom: 18 }} aria-label="品牌标识">
+        同
       </div>
       <h2
         style={{

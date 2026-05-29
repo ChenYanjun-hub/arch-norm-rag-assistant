@@ -546,18 +546,42 @@
   color: var(--sidebar-text);
   border-bottom: 1px solid var(--sidebar-line);
 }
+/* 品牌标识 · 原创设计（圆形 + 同济蓝 + 内琥珀环，致敬学术徽章风格） */
 .cn-logo-mark {
   width: 30px; height: 30px;
-  border-radius: 7px;
-  background: var(--amber);
-  color: var(--sidebar);
+  border-radius: 50%;
+  background: var(--primary);
+  color: #ffffff;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-weight: 700;
+  font-weight: 600;
   font-family: var(--font-serif);
-  font-size: 16px;
+  font-size: 15px;
   flex: 0 0 auto;
+  /* 内侧 1.5px 琥珀环 + 外侧轻阴影，模拟学术徽章质感 */
+  box-shadow:
+    inset 0 0 0 1.5px rgba(228, 180, 100, 0.55),
+    0 1px 3px rgba(0, 51, 102, 0.25);
+  position: relative;
+}
+
+/* 大尺寸品牌方块（用于 EmptyState） */
+.cn-brand-mark-lg {
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-serif);
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  box-shadow:
+    inset 0 0 0 2.5px rgba(228, 180, 100, 0.55),
+    0 6px 24px rgba(0, 91, 172, 0.22);
 }
 .cn-logo-text { line-height: 1.2; }
 .cn-logo-name { font-weight: 600; font-size: 14px; color: #fff; letter-spacing: 0.04em; }

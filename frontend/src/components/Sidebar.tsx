@@ -29,7 +29,7 @@ export function Sidebar({ onNewChat }: Props) {
       }}
     >
       <div className="cn-logo">
-        <div className="cn-logo-mark">建</div>
+        <div className="cn-logo-mark" aria-label="品牌标识">同</div>
         <div className="cn-logo-text">
           <div className="cn-logo-name">建景规·助手</div>
           <div className="cn-logo-sub">REGULATION&nbsp;COPILOT</div>
