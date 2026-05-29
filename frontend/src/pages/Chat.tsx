@@ -31,6 +31,12 @@ export function ChatPage() {
     })
   }, [messages])
 
+  // 新一轮对话开始时清空 activeCite
+  useEffect(() => {
+    setActiveCite(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages.length])
+
   function handleSubmit(q: string) {
     if (!q.trim() || isStreaming) return
     void send(q)
@@ -39,6 +45,7 @@ export function ChatPage() {
   // 最新一条 assistant 消息的引用 → 右栏
   const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant')
   const citations: Citation[] = lastAssistant?.citations ?? []
+  const lastAssistantId = lastAssistant?.id ?? null
 
   const userQueryTitle =
     [...messages].reverse().find((m) => m.role === 'user')?.content?.slice(0, 50) ??
@@ -132,7 +139,16 @@ export function ChatPage() {
             {messages.length === 0 ? (
               <EmptyState onPick={handleSubmit} />
             ) : (
-              messages.map((m) => <ChatMessage key={m.id} message={m} />)
+              messages.map((m) => (
+                <ChatMessage
+                  key={m.id}
+                  message={m}
+                  activeCite={m.id === lastAssistantId ? activeCite : null}
+                  onCiteClick={
+                    m.id === lastAssistantId ? (n) => setActiveCite(n) : undefined
+                  }
+                />
+              ))
             )}
           </div>
         </div>

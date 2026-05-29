@@ -89,6 +89,48 @@ export function CitationCard({ index, citation, active, onClick }: Props) {
           <div className="cn-cite-section-label">原文条文</div>
           <div className="cn-cite-quote">{original_text || '（原文片段为空）'}</div>
         </div>
+
+        {spec_code && (
+          <div className="cn-cite-section">
+            <a
+              href={`/api/spec/${encodeURIComponent(spec_code)}${page ? `#page=${page}` : ''}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '7px 12px',
+                fontSize: 12,
+                color: 'var(--primary)',
+                background: 'var(--primary-soft)',
+                border: '1px solid var(--primary-line)',
+                borderRadius: 6,
+                textDecoration: 'none',
+                fontFamily: 'inherit',
+                transition: 'all .14s',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'var(--primary)'
+                e.currentTarget.style.color = '#fff'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'var(--primary-soft)'
+                e.currentTarget.style.color = 'var(--primary)'
+              }}
+            >
+              <span>📄</span>
+              <span>查看原文 PDF</span>
+              {page && (
+                <span style={{ fontFamily: 'var(--font-mono)', opacity: 0.7 }}>
+                  · 第 {page} 页
+                </span>
+              )}
+              <span>↗</span>
+            </a>
+          </div>
+        )}
       </div>
     </div>
   )

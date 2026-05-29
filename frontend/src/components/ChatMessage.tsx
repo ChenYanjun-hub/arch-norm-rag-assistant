@@ -5,10 +5,18 @@ import type { ChatMessage as ChatMessageType } from '../types/chat'
 
 interface Props {
   message: ChatMessageType
+  /** 当前激活的引用编号（与右栏 CiteCard 联动）*/
+  activeCite?: number | null
+  /** 点击正文 [N] chip 时回调 */
+  onCiteClick?: (n: number) => void
 }
 
 /** 把 token 文本里的 [N] 转换成 cn-cite chip */
-function renderWithCitations(text: string): React.ReactNode[] {
+function renderWithCitations(
+  text: string,
+  activeCite?: number | null,
+  onCiteClick?: (n: number) => void,
+): React.ReactNode[] {
   const parts: React.ReactNode[] = []
   let lastIndex = 0
   const re = /\[(\d+)\]/g
@@ -18,9 +26,20 @@ function renderWithCitations(text: string): React.ReactNode[] {
     if (m.index > lastIndex) {
       parts.push(text.slice(lastIndex, m.index))
     }
+    const n = parseInt(m[1], 10)
+    const isActive = activeCite === n
     parts.push(
-      <span className="cn-cite" key={`cite-${key++}-${m.index}`}>
-        <span>[{m[1]}]</span>
+      <span
+        className={'cn-cite' + (isActive ? ' is-active' : '')}
+        key={`cite-${key++}-${m.index}`}
+        onClick={(e) => {
+          e.stopPropagation()
+          onCiteClick?.(n)
+        }}
+        role="button"
+        tabIndex={0}
+      >
+        <span>[{n}]</span>
       </span>,
     )
     lastIndex = m.index + m[0].length
@@ -31,7 +50,7 @@ function renderWithCitations(text: string): React.ReactNode[] {
   return parts
 }
 
-export function ChatMessage({ message }: Props) {
+export function ChatMessage({ message, activeCite, onCiteClick }: Props) {
   const isUser = message.role === 'user'
 
   if (isUser) {
@@ -115,7 +134,7 @@ export function ChatMessage({ message }: Props) {
             </div>
           ) : (
             <div style={{ whiteSpace: 'pre-wrap' }}>
-              {renderWithCitations(message.content)}
+              {renderWithCitations(message.content, activeCite, onCiteClick)}
               {message.streaming && (
                 <span
                   style={{

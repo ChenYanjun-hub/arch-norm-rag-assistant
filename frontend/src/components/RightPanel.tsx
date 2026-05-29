@@ -1,6 +1,7 @@
 // 右侧引用面板（cn-app 设计语言）
 // 显示当前最新一条 assistant 消息的引用列表
 
+import { useEffect, useRef } from 'react'
 import type { Citation } from '../types/chat'
 import { CitationCard } from './CitationCard'
 
@@ -12,6 +13,18 @@ interface Props {
 }
 
 export function RightPanel({ citations, activeIndex, onActiveChange }: Props) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const cardRefs = useRef<Record<number, HTMLDivElement | null>>({})
+
+  // 当 activeIndex 改变 → 滚动到对应卡片
+  useEffect(() => {
+    if (activeIndex == null) return
+    const el = cardRefs.current[activeIndex]
+    if (el && scrollRef.current) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }, [activeIndex])
+
   return (
     <aside
       className="cn-layout-rightpanel"
@@ -56,6 +69,7 @@ export function RightPanel({ citations, activeIndex, onActiveChange }: Props) {
       </div>
 
       <div
+        ref={scrollRef}
         className="cn-scroll"
         style={{
           flex: 1,
@@ -80,15 +94,24 @@ export function RightPanel({ citations, activeIndex, onActiveChange }: Props) {
             <span style={{ fontSize: 11 }}>提问后会在这里显示规范条文出处</span>
           </div>
         ) : (
-          citations.map((c, i) => (
-            <CitationCard
-              key={i}
-              index={i + 1}
-              citation={c}
-              active={activeIndex === i + 1}
-              onClick={() => onActiveChange?.(i + 1)}
-            />
-          ))
+          citations.map((c, i) => {
+            const n = i + 1
+            return (
+              <div
+                key={i}
+                ref={(el) => {
+                  cardRefs.current[n] = el
+                }}
+              >
+                <CitationCard
+                  index={n}
+                  citation={c}
+                  active={activeIndex === n}
+                  onClick={() => onActiveChange?.(n)}
+                />
+              </div>
+            )
+          })
         )}
       </div>
     </aside>
