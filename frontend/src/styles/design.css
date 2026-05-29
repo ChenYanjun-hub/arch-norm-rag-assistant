@@ -7,13 +7,13 @@
   --paper-soft: #fafaf7;
   --paper-tint: #f0ede4;
 
-  /* sidebar */
-  --sidebar: #14322a;
-  --sidebar-soft: #1c4036;
-  --sidebar-line: #2a4a40;
+  /* sidebar — 同济蓝深色基调 */
+  --sidebar: #003366;
+  --sidebar-soft: #0a4480;
+  --sidebar-line: #1a5390;
   --sidebar-text: #e3dec9;
-  --sidebar-text-soft: #97a89f;
-  --sidebar-text-mute: #6b7d75;
+  --sidebar-text-soft: #9fb4c8;
+  --sidebar-text-mute: #6b8099;
 
   /* ink */
   --ink: #1a1a1a;
@@ -26,13 +26,13 @@
   --border-soft: #efece4;
   --border-strong: #d2cfc4;
 
-  /* brand */
-  --primary: #1a3a2e;
-  --primary-hover: #244e3e;
-  --primary-soft: #e8efe9;
-  --primary-line: #c5d4c9;
+  /* brand — 同济蓝 (Tongji Blue) */
+  --primary: #005BAC;
+  --primary-hover: #1a72c0;
+  --primary-soft: #e6f0fa;
+  --primary-line: #b8d4ec;
 
-  /* accents */
+  /* accents — 琥珀（与蓝色互补，原引用色保留） */
   --amber: #b4793a;
   --amber-bg: #f7ecd6;
   --amber-line: #e7d3a8;
@@ -40,7 +40,7 @@
   --terracotta: #a85a3d;
   --indigo: #3d4f6e;
 
-  /* status */
+  /* status — 状态色保留语义化（绿=有效，琥珀=局部失效，灰=作废）*/
   --status-active: #2d6e4a;
   --status-active-bg: #e2efe5;
   --status-deprecated: #8e8e88;
@@ -49,9 +49,9 @@
   --status-partial-bg: #f7ecd6;
 
   /* category color codes */
-  --cat-arch: #1a3a2e;       /* 建筑 — 深绿 */
+  --cat-arch: #005BAC;       /* 建筑 — 同济蓝 */
   --cat-landscape: #6b6033;  /* 景观 — 橄榄 */
-  --cat-planning: #3d4f6e;   /* 规划 — 靛青 */
+  --cat-planning: #1a5390;   /* 规划 — 深蓝（与建筑同系深一档区分） */
 
   /* type */
   --font-sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Source Han Sans CN", "Noto Sans CJK SC", system-ui, sans-serif;
