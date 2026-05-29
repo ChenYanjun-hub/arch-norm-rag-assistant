@@ -1,8 +1,12 @@
-// 问答主页面（P2 · MVP 阶段）
+// 问答主页面（三栏布局 · 设计参考 claude design/pc-mock.jsx）
 
 import { useEffect, useRef, useState } from 'react'
 import { useChatStore } from '../stores/chatStore'
 import { ChatMessage } from '../components/ChatMessage'
+import { Sidebar } from '../components/Sidebar'
+import { RightPanel } from '../components/RightPanel'
+import { InputBar } from '../components/InputBar'
+import type { Citation } from '../types/chat'
 
 const SAMPLE_QUERIES = [
   '居住区配套幼儿园的服务半径不应大于多少米？',
@@ -17,10 +21,9 @@ export function ChatPage() {
   const send = useChatStore((s) => s.send)
   const clear = useChatStore((s) => s.clear)
 
-  const [input, setInput] = useState('')
+  const [activeCite, setActiveCite] = useState<number | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  // 自动滚动到底部
   useEffect(() => {
     scrollRef.current?.scrollTo({
       top: scrollRef.current.scrollHeight,
@@ -28,108 +31,220 @@ export function ChatPage() {
     })
   }, [messages])
 
-  function handleSubmit(e?: React.FormEvent) {
-    e?.preventDefault()
-    if (!input.trim() || isStreaming) return
-    const q = input
-    setInput('')
+  function handleSubmit(q: string) {
+    if (!q.trim() || isStreaming) return
     void send(q)
   }
 
-  function handleSampleClick(q: string) {
-    if (isStreaming) return
-    setInput(q)
-    void send(q)
-  }
+  // 最新一条 assistant 消息的引用 → 右栏
+  const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant')
+  const citations: Citation[] = lastAssistant?.citations ?? []
+
+  const userQueryTitle =
+    [...messages].reverse().find((m) => m.role === 'user')?.content?.slice(0, 50) ??
+    '建景规·助手 — 设计规范智能查询'
 
   return (
-    <div className="h-full flex flex-col">
-      {/* 顶栏 */}
-      <header className="border-b border-gray-200 bg-white px-6 py-3 flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold text-gray-900">
-            建景规规范知识问答助手
-          </h1>
-          <p className="text-xs text-gray-500">
-            覆盖规划 / 建筑 / 景观 / 消防 4 类设计规范（39 部 / 4773 条）
-          </p>
-        </div>
-        {messages.length > 0 && (
-          <button
-            onClick={clear}
-            disabled={isStreaming}
-            className="text-xs text-gray-500 hover:text-gray-700 disabled:opacity-30"
-          >
-            清空对话
-          </button>
-        )}
-      </header>
+    <div
+      className="cn-app"
+      style={{
+        display: 'flex',
+        height: '100%',
+        width: '100%',
+        overflow: 'hidden',
+      }}
+    >
+      <Sidebar onNewChat={clear} />
 
-      {/* 消息列表 */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-6">
-        <div className="max-w-3xl mx-auto flex flex-col gap-5">
-          {messages.length === 0 ? (
-            <EmptyState onPick={handleSampleClick} />
-          ) : (
-            messages.map((m) => <ChatMessage key={m.id} message={m} />)
-          )}
-        </div>
-      </div>
-
-      {/* 输入框 */}
-      <form
-        onSubmit={handleSubmit}
-        className="border-t border-gray-200 bg-white px-6 py-4"
+      <main
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          minWidth: 0,
+          background: 'var(--bg)',
+        }}
       >
-        <div className="max-w-3xl mx-auto flex gap-2 items-end">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                handleSubmit()
-              }
-            }}
-            placeholder="输入规范查询问题（Enter 发送，Shift+Enter 换行）"
-            rows={2}
-            maxLength={500}
-            disabled={isStreaming}
-            className="flex-1 resize-none border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50"
-          />
-          <button
-            type="submit"
-            disabled={!input.trim() || isStreaming}
-            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
-          >
-            {isStreaming ? '回答中…' : '发送'}
-          </button>
+        {/* 顶栏 */}
+        <div className="cn-topbar">
+          <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.3, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+              <span
+                className="cn-topbar-title"
+                style={{
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  maxWidth: 600,
+                }}
+              >
+                {userQueryTitle}
+              </span>
+              <span className="cn-topbar-pill">
+                <span
+                  style={{
+                    width: 5,
+                    height: 5,
+                    borderRadius: 50,
+                    background: 'currentColor',
+                  }}
+                />
+                MVP 体验
+              </span>
+            </div>
+            <div className="cn-topbar-sub">
+              覆盖规划 / 建筑 / 景观 / 消防 4 类 · 39 部规范 · 4773 条条文
+              {citations.length > 0 && (
+                <>
+                  {' · '}
+                  <span style={{ fontFamily: 'var(--font-mono)' }}>{citations.length}</span>{' '}
+                  条引用
+                </>
+              )}
+            </div>
+          </div>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
+            {messages.length > 0 && (
+              <button
+                className="cn-msg-tool"
+                style={{ padding: '6px 10px' }}
+                onClick={clear}
+                disabled={isStreaming}
+              >
+                清空对话
+              </button>
+            )}
+          </div>
         </div>
-        <div className="max-w-3xl mx-auto mt-1.5 text-[11px] text-gray-400 text-right">
-          {input.length} / 500
+
+        {/* 消息列表 */}
+        <div
+          ref={scrollRef}
+          className="cn-scroll"
+          style={{
+            flex: 1,
+            padding: '24px 28px 0',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          <div style={{ maxWidth: 760, width: '100%', margin: '0 auto', minHeight: '100%' }}>
+            {messages.length === 0 ? (
+              <EmptyState onPick={handleSubmit} />
+            ) : (
+              messages.map((m) => <ChatMessage key={m.id} message={m} />)
+            )}
+          </div>
         </div>
-      </form>
+
+        {/* 输入栏 */}
+        <div style={{ maxWidth: 880, width: '100%', margin: '0 auto', alignSelf: 'center' }}>
+          <InputBar disabled={isStreaming} onSubmit={handleSubmit} />
+        </div>
+      </main>
+
+      <RightPanel
+        citations={citations}
+        activeIndex={activeCite}
+        onActiveChange={setActiveCite}
+      />
     </div>
   )
 }
 
 function EmptyState({ onPick }: { onPick: (q: string) => void }) {
   return (
-    <div className="text-center py-10">
-      <div className="text-5xl mb-3">📐</div>
-      <h2 className="text-xl font-medium text-gray-900 mb-1">
-        从这里开始查询设计规范
+    <div style={{ textAlign: 'center', padding: '60px 8px' }}>
+      <div
+        style={{
+          width: 56,
+          height: 56,
+          borderRadius: 14,
+          background: 'var(--amber)',
+          color: 'var(--sidebar)',
+          fontFamily: 'var(--font-serif)',
+          fontSize: 26,
+          fontWeight: 700,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginBottom: 18,
+          boxShadow: '0 6px 24px rgba(180,121,58,0.18)',
+        }}
+      >
+        建
+      </div>
+      <h2
+        style={{
+          fontFamily: 'var(--font-serif)',
+          fontSize: 22,
+          color: 'var(--ink)',
+          margin: '0 0 6px',
+          letterSpacing: '0.02em',
+        }}
+      >
+        像查法条一样查规范
       </h2>
-      <p className="text-sm text-gray-500 mb-6">
-        像查法条一样严谨，所有答案带规范号 + 条文号 + 原文引用
+      <p
+        style={{
+          fontSize: 13.5,
+          color: 'var(--ink-mute)',
+          margin: '0 auto 26px',
+          maxWidth: 460,
+          lineHeight: 1.7,
+        }}
+      >
+        覆盖规划 / 建筑 / 景观 / 消防 4 类设计规范<br />
+        所有答案附规范号 + 条文号 + 原文引用，可追溯、不编造
       </p>
-      <div className="max-w-md mx-auto flex flex-col gap-2">
-        <div className="text-xs text-gray-400 mb-1">试试这些示例：</div>
+
+      <div
+        style={{
+          maxWidth: 560,
+          margin: '0 auto',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 11,
+            color: 'var(--ink-faint)',
+            textAlign: 'left',
+            letterSpacing: '0.12em',
+            textTransform: 'uppercase',
+            marginBottom: 2,
+          }}
+        >
+          试试这些示例
+        </div>
         {SAMPLE_QUERIES.map((q) => (
           <button
             key={q}
             onClick={() => onPick(q)}
-            className="text-left text-sm text-gray-700 bg-white hover:bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 transition-colors"
+            style={{
+              textAlign: 'left',
+              fontSize: 13.5,
+              color: 'var(--ink-soft)',
+              background: 'var(--paper)',
+              border: '1px solid var(--border)',
+              borderRadius: 10,
+              padding: '11px 14px',
+              cursor: 'pointer',
+              transition: 'all .14s',
+              fontFamily: 'inherit',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'var(--primary-soft)'
+              e.currentTarget.style.borderColor = 'var(--primary-line)'
+              e.currentTarget.style.color = 'var(--primary)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'var(--paper)'
+              e.currentTarget.style.borderColor = 'var(--border)'
+              e.currentTarget.style.color = 'var(--ink-soft)'
+            }}
           >
             {q}
           </button>

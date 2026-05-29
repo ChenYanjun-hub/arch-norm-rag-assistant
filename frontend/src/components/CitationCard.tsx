@@ -1,44 +1,95 @@
-// 引用卡片：展示单条规范引用（CLAUDE.md 红线 2 P0 要素）
+// 引用卡片（cn-cite-card 设计语言）
+// 设计参考：claude design/pc-mock.jsx · CiteCard
+//
+// 后端 Citation 字段：spec_name / spec_code / clause / page / is_mandatory / original_text / domain
+// 设计稿额外字段（暂无后端数据，先省略）：状态徽章 / 释义 / PDF 缩略图 / 关联条文
 
 import type { Citation } from '../types/chat'
 
 interface Props {
   index: number
   citation: Citation
+  /** 当前激活态（被正文 [n] 角标点中时高亮） */
+  active?: boolean
+  onClick?: () => void
 }
 
-export function CitationCard({ index, citation }: Props) {
+/** 根据 domain 映射设计 token 中的分类色 */
+function domainKey(domain: string): 'arch' | 'landscape' | 'planning' {
+  if (domain.includes('景观')) return 'landscape'
+  if (domain.includes('规划')) return 'planning'
+  return 'arch' // 建筑 / 消防 默认归入建筑深绿系
+}
+
+export function CitationCard({ index, citation, active, onClick }: Props) {
   const { spec_name, spec_code, clause, page, is_mandatory, original_text, domain } =
     citation
 
-  const clauseDisp = clause.startsWith('表') || clause.startsWith('式')
-    ? clause
-    : `第 ${clause} 条`
+  const clauseDisp =
+    clause.startsWith('表') || clause.startsWith('式')
+      ? clause
+      : `§ ${clause}`
+
+  const cat = domainKey(domain)
 
   return (
-    <div className="border border-gray-200 rounded-md bg-white p-3 text-sm">
-      <div className="flex items-baseline gap-2 mb-1.5 flex-wrap">
-        <span className="font-mono text-xs text-gray-500">[{index}]</span>
-        <span className="font-semibold text-gray-900">《{spec_name}》</span>
-        <span className="font-mono text-xs text-gray-600">{spec_code}</span>
-        <span className="text-gray-700">{clauseDisp}</span>
-        {page !== null && (
-          <span className="text-xs text-gray-500">第 {page} 页</span>
-        )}
-        {is_mandatory && (
-          <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-red-50 text-red-700 border border-red-200">
-            强制性
+    <div
+      onClick={onClick}
+      className="cn-cite-card"
+      style={
+        active
+          ? { boxShadow: '0 0 0 2px var(--amber)', borderColor: 'var(--amber)' }
+          : undefined
+      }
+    >
+      <div className="cn-cite-head">
+        <div className="cn-cite-eyebrow">
+          <span className="cn-cite-num">{index}</span>
+          <span>条文出处</span>
+          {is_mandatory && (
+            <span className="cn-badge is-partial" style={{ marginLeft: 'auto' }}>
+              强制性
+            </span>
+          )}
+          {!is_mandatory && (
+            <span className="cn-badge is-active" style={{ marginLeft: 'auto' }}>
+              现行有效
+            </span>
+          )}
+        </div>
+        <div className="cn-cite-title">《{spec_name}》</div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+          <span className="cn-cite-id">{spec_code}</span>
+          <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>·</span>
+          <span
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 12,
+              color: 'var(--primary)',
+              fontWeight: 600,
+            }}
+          >
+            {clauseDisp}
           </span>
-        )}
-        {domain && (
-          <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-blue-50 text-blue-700 border border-blue-200">
-            {domain}
-          </span>
-        )}
+          {page !== null && (
+            <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>
+              · 第 {page} 页
+            </span>
+          )}
+          <span
+            className={`cn-tag-dot cn-cat-${cat}`}
+            style={{ width: 8, height: 8, borderRadius: 50 }}
+            title={domain}
+          />
+        </div>
       </div>
-      <p className="text-gray-700 leading-relaxed whitespace-pre-wrap line-clamp-3">
-        {original_text}
-      </p>
+
+      <div className="cn-cite-body">
+        <div className="cn-cite-section">
+          <div className="cn-cite-section-label">原文条文</div>
+          <div className="cn-cite-quote">{original_text || '（原文片段为空）'}</div>
+        </div>
+      </div>
     </div>
   )
 }

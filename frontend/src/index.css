@@ -1,13 +1,18 @@
 @import "tailwindcss";
+@import "./styles/design.css";
 
-/* 全局基础样式 */
+/* 全局基础（cn-app 已含字体/颜色，这里只兜底） */
 html, body, #root {
   height: 100%;
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  letter-spacing: 0.01em;
   -webkit-font-smoothing: antialiased;
-  background: #fafafa;
-  color: #1a1a1a;
 }

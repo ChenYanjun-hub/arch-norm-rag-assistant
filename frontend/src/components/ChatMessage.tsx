@@ -1,10 +1,34 @@
-// 单条聊天消息（user 或 assistant）
+// 单条聊天消息（cn-msg-user / cn-msg-card 设计语言）
+// 设计参考：claude design/pc-mock.jsx · UserMsg + AIMsg
 
 import type { ChatMessage as ChatMessageType } from '../types/chat'
-import { CitationCard } from './CitationCard'
 
 interface Props {
   message: ChatMessageType
+}
+
+/** 把 token 文本里的 [N] 转换成 cn-cite chip */
+function renderWithCitations(text: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = []
+  let lastIndex = 0
+  const re = /\[(\d+)\]/g
+  let m: RegExpExecArray | null
+  let key = 0
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > lastIndex) {
+      parts.push(text.slice(lastIndex, m.index))
+    }
+    parts.push(
+      <span className="cn-cite" key={`cite-${key++}-${m.index}`}>
+        <span>[{m[1]}]</span>
+      </span>,
+    )
+    lastIndex = m.index + m[0].length
+  }
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex))
+  }
+  return parts
 }
 
 export function ChatMessage({ message }: Props) {
@@ -12,9 +36,18 @@ export function ChatMessage({ message }: Props) {
 
   if (isUser) {
     return (
-      <div className="flex justify-end">
-        <div className="max-w-[80%] bg-blue-600 text-white px-4 py-2.5 rounded-2xl rounded-tr-sm">
-          <p className="whitespace-pre-wrap break-words">{message.content}</p>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 18 }}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-end',
+            gap: 4,
+            maxWidth: '82%',
+          }}
+        >
+          <div style={{ fontSize: 11, color: 'var(--ink-faint)' }}>你</div>
+          <div className="cn-msg-user">{message.content}</div>
         </div>
       </div>
     )
@@ -22,44 +55,94 @@ export function ChatMessage({ message }: Props) {
 
   // assistant
   return (
-    <div className="flex flex-col gap-3">
-      <div className="max-w-full bg-white border border-gray-200 px-4 py-3 rounded-2xl rounded-tl-sm">
-        {message.fallback && (
-          <div className="mb-2 inline-block px-2 py-0.5 text-[10px] font-medium rounded bg-amber-50 text-amber-700 border border-amber-200">
-            兜底场景：{message.fallback}
-          </div>
-        )}
-        {message.error ? (
-          <div className="text-red-600 text-sm">
-            ❌ 出错：{message.error}
-          </div>
-        ) : (
-          <div className="prose-sm text-gray-800 whitespace-pre-wrap break-words leading-relaxed">
-            {message.content}
-            {message.streaming && (
-              <span className="inline-block w-1.5 h-4 bg-gray-400 align-middle ml-0.5 animate-pulse" />
-            )}
-          </div>
-        )}
-        {message.done && !message.streaming && (
-          <div className="mt-2 pt-2 border-t border-gray-100 text-[11px] text-gray-400 font-mono">
-            TTFT {message.done.ttft_ms}ms · 总 {message.done.total_ms}ms ·{' '}
-            {message.done.tokens_out} tokens
-            {message.retrieval &&
-              ` · 检索 ${message.retrieval.n_kept}/${message.retrieval.n_candidates}`}
-          </div>
-        )}
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 18 }}>
+      <div
+        style={{
+          width: 32,
+          height: 32,
+          flex: '0 0 auto',
+          borderRadius: '50%',
+          background: 'var(--primary)',
+          color: '#fff',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontFamily: 'var(--font-serif)',
+          fontSize: 14,
+          fontWeight: 600,
+        }}
+      >
+        规
       </div>
-      {message.citations && message.citations.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <div className="text-xs text-gray-500 font-medium">
-            📚 引用（{message.citations.length} 条）
-          </div>
-          {message.citations.map((c, i) => (
-            <CitationCard key={i} index={i + 1} citation={c} />
-          ))}
+
+      <div className="cn-msg-ai">
+        <div
+          style={{
+            fontSize: 11,
+            color: 'var(--ink-faint)',
+            marginBottom: 4,
+            display: 'flex',
+            gap: 6,
+            alignItems: 'center',
+            flexWrap: 'wrap',
+          }}
+        >
+          <span style={{ fontWeight: 600, color: 'var(--primary)' }}>规·助手</span>
+          {message.retrieval && (
+            <>
+              <span>·</span>
+              <span>
+                已检索{' '}
+                <span style={{ fontFamily: 'var(--font-mono)' }}>
+                  {message.retrieval.n_kept}/{message.retrieval.n_candidates}
+                </span>{' '}
+                条相关条文
+              </span>
+            </>
+          )}
+          {message.fallback && (
+            <span style={{ color: 'var(--amber)' }}>● 兜底场景 · {message.fallback}</span>
+          )}
+          {!message.fallback && message.done && (
+            <span style={{ color: 'var(--status-active)' }}>● 现行有效</span>
+          )}
         </div>
-      )}
+
+        <div className="cn-msg-card">
+          {message.error ? (
+            <div style={{ color: 'var(--terracotta)', fontSize: 13 }}>
+              ❌ 出错：{message.error}
+            </div>
+          ) : (
+            <div style={{ whiteSpace: 'pre-wrap' }}>
+              {renderWithCitations(message.content)}
+              {message.streaming && (
+                <span
+                  style={{
+                    display: 'inline-block',
+                    width: 6,
+                    height: 14,
+                    background: 'var(--ink-mute)',
+                    marginLeft: 2,
+                    verticalAlign: 'middle',
+                    animation: 'cn-blink 1s steps(2, end) infinite',
+                  }}
+                />
+              )}
+            </div>
+          )}
+
+          {message.done && !message.streaming && (
+            <div
+              className="cn-msg-tools"
+              style={{ fontSize: 11, color: 'var(--ink-faint)', fontFamily: 'var(--font-mono)' }}
+            >
+              TTFT {message.done.ttft_ms}ms · 总 {message.done.total_ms}ms ·{' '}
+              {message.done.tokens_out} tokens
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
