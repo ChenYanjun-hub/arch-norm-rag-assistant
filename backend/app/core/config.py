@@ -87,4 +87,8 @@ RETRIEVAL_CONFIG: dict[str, object] = {
 LLM_TIMEOUT_SECONDS = 30
 LLM_MAX_RETRIES = 1
 
+# Reranker 开关：默认开（提升召回质量），可在 .env 关
+RERANK_ENABLED = os.getenv("RERANK_ENABLED", "true").lower() in ("1", "true", "yes")
+RERANK_MIN_SCORE = float(os.getenv("RERANK_MIN_SCORE", "0.1"))
+
 settings = Settings()

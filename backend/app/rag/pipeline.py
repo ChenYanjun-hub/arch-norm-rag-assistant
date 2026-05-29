@@ -25,7 +25,7 @@ import logging
 from collections.abc import Iterator
 from typing import Any
 
-from app.core.config import RETRIEVAL_CONFIG
+from app.core.config import RERANK_ENABLED, RERANK_MIN_SCORE, RETRIEVAL_CONFIG
 from app.core.prompts import (
     NO_RESULT_REPLY,
     SYSTEM_PROMPT_MAIN,
@@ -121,9 +121,28 @@ def run_rag_sync(
         yield {"type": "error", "data": f"RETRIEVAL_SEARCH_FAILED: {e}"}
         return
 
-    # MVP 阶段：未接 reranker，先取 top_k_rerank 个高分 chunks
     top_k_use = int(RETRIEVAL_CONFIG["top_k_rerank"])
-    kept_payloads = _select_relevant_chunks(raw_results[:top_k_use], min_relevance)
+
+    # 决策点：是否走 Reranker 精排
+    if RERANK_ENABLED and raw_results:
+        try:
+            from app.rag.reranker import rerank
+            reranked = rerank(
+                query,
+                raw_results,
+                top_k=top_k_use,
+                min_score=RERANK_MIN_SCORE,
+            )
+            # rerank 后用 reranker 自己的阈值；保留向量 score 作为 fallback 判定的元数据
+            kept_payloads = [r["payload"] for r in reranked]
+        except Exception as e:
+            logger.warning(f"[pipeline] rerank 失败，回退到 vector top-k：{e}")
+            kept_payloads = _select_relevant_chunks(
+                raw_results[:top_k_use], min_relevance
+            )
+    else:
+        # 未启用 reranker：用向量相关性阈值过滤
+        kept_payloads = _select_relevant_chunks(raw_results[:top_k_use], min_relevance)
 
     yield {
         "type": "retrieval",
@@ -131,6 +150,7 @@ def run_rag_sync(
             "n_candidates": len(raw_results),
             "n_kept": len(kept_payloads),
             "min_relevance": min_relevance,
+            "reranked": RERANK_ENABLED,
         },
     }
 
