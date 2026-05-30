@@ -33,7 +33,7 @@ from app.core.prompts import (
 )
 from app.rag.embedder import embed_one
 from app.rag.generator import stream_chat_sync
-from app.rag.retriever import search
+from app.rag.retriever import dedup_results, search
 from app.services.fallback import FALLBACK_CHITCHAT, FALLBACK_OUT_OF_SCOPE
 from app.services.scenario import detect_scenario
 
@@ -110,9 +110,10 @@ def run_rag_sync(
         return
 
     try:
+        # W3 D1：粗排放大 2× 以补偿 dedup 损耗，dedup 后保留约 top_k_rough 条
         raw_results = search(
             qvec,
-            top_k=top_k_rough,
+            top_k=top_k_rough * 2,
             domain_filter=domain_filter,
             spec_code_filter=spec_code_filter,
         )
@@ -120,6 +121,10 @@ def run_rag_sync(
         logger.exception(f"[pipeline] search 失败: {e}")
         yield {"type": "error", "data": f"RETRIEVAL_SEARCH_FAILED: {e}"}
         return
+
+    # W3 D1：去掉 chunker _dN 后缀产生的 text 重复（同 spec_code + 同文本前缀）
+    n_before_dedup = len(raw_results)
+    raw_results = dedup_results(raw_results)[:top_k_rough]
 
     top_k_use = int(RETRIEVAL_CONFIG["top_k_rerank"])
 
@@ -151,6 +156,7 @@ def run_rag_sync(
         "data": {
             "n_candidates": len(raw_results),
             "n_kept": len(kept_payloads),
+            "n_before_dedup": n_before_dedup,  # ★ W3 D1 dedup 透明度
             "min_relevance": min_relevance,
             "reranked": rerank_used,  # ★ 实际状态，非 flag
         },

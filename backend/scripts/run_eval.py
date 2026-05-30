@@ -169,10 +169,11 @@ def _run_one(
     top_k_retrieve: int,
     use_rerank: bool,
     rerank_top_k: int,
+    use_dedup: bool,
 ) -> RowResult | None:
     """跑单条 query。失败返回 None。"""
     from app.rag.embedder import embed_one
-    from app.rag.retriever import search
+    from app.rag.retriever import dedup_results, search
 
     query = row["query"].strip()
     expected_spec = row.get("expected_spec", "").strip()
@@ -181,7 +182,11 @@ def _run_one(
     t0 = time.time()
     try:
         qvec = embed_one(query)
-        raw = search(qvec, top_k=top_k_retrieve)
+        # W3 D1：dedup 时粗排放大 2× 补偿损耗
+        rough_factor = 2 if use_dedup else 1
+        raw = search(qvec, top_k=top_k_retrieve * rough_factor)
+        if use_dedup:
+            raw = dedup_results(raw)[:top_k_retrieve]
     except Exception as e:
         logger.error(f"[{row['id']}] retrieval failed: {e}")
         return None
@@ -272,6 +277,7 @@ def main() -> None:
         "--rerank-top-k", type=int, default=10, help="评测时保留 top-N"
     )
     parser.add_argument("--no-rerank", action="store_true")
+    parser.add_argument("--no-dedup", action="store_true", help="关闭 chunker _dN 内容级去重，方便对比")
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
 
@@ -281,7 +287,8 @@ def main() -> None:
     )
 
     use_rerank = not args.no_rerank
-    label = f"rerank_{'on' if use_rerank else 'off'}"
+    use_dedup = not args.no_dedup
+    label = f"rerank_{'on' if use_rerank else 'off'}_dedup_{'on' if use_dedup else 'off'}"
 
     if not args.csv.exists():
         print(f"❌ 评测集 CSV 不存在：{args.csv}", file=sys.stderr)
@@ -301,7 +308,8 @@ def main() -> None:
     )
     print(
         f"   参数：top_k_retrieve={args.top_k_retrieve} "
-        f"rerank_top_k={args.rerank_top_k}\n"
+        f"rerank_top_k={args.rerank_top_k} "
+        f"dedup={use_dedup}\n"
     )
 
     results: list[RowResult] = []
@@ -312,6 +320,7 @@ def main() -> None:
             top_k_retrieve=args.top_k_retrieve,
             use_rerank=use_rerank,
             rerank_top_k=args.rerank_top_k,
+            use_dedup=use_dedup,
         )
         if res is None:
             continue

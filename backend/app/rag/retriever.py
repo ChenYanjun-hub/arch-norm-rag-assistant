@@ -190,3 +190,62 @@ def count() -> int:
         return client.count(collection_name=COLLECTION_NAME).count
     except Exception:
         return 0
+
+
+# ── chunk 内容级去重（W3 D1 加） ──────────────────────────────
+#
+# 背景：chunker 的 _dN 后缀机制让"同 clause 号被切多次"——chunk_id 唯一但
+# text 内容完全相同。GB 55037-2022 实测 422 chunks / 228 独立 clause，
+# 1.85 倍重复率。直接导致：
+#   - 向量检索 top-K 名额被同义内容连续占据（实测 rank 1+2 完全同 score）
+#   - 真正不同 clause 的相关 chunk 被挤出 top-K
+#
+# 修复（短期）：在 pipeline 拿到 search 结果后调本函数去重，按
+# (spec_code, normalized_text_prefix) 作为 key，保留最高 score 那条。
+# 长期方案见 docs/design/chunker_v2.md。
+
+
+def _norm_text_for_dedup(text: str, prefix_len: int = 200) -> str:
+    """对 text 做轻量归一化，用于 dedup key。
+    去全部空白 + 取前 prefix_len 字符。
+    """
+    return "".join((text or "").split())[:prefix_len]
+
+
+def dedup_results(
+    results: list[dict[str, Any]],
+    *,
+    prefix_len: int = 200,
+) -> list[dict[str, Any]]:
+    """按 (spec_code, normalized_text_prefix) 对 search 结果去重。
+
+    Args:
+        results: search() 返回值，按 score 降序
+        prefix_len: 文本前缀长度用于比对
+
+    Returns:
+        去重后的列表，保持 score 降序；同 key 保留 score 最高的那条
+        （即第一次出现的，因为输入已按 score 降序）
+
+    日志：去重前后数量
+    """
+    if not results:
+        return results
+    seen: set[tuple[str, str]] = set()
+    kept: list[dict[str, Any]] = []
+    for r in results:
+        p = r.get("payload") or {}
+        key = (
+            (p.get("spec_code") or "").strip(),
+            _norm_text_for_dedup(p.get("text") or "", prefix_len),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        kept.append(r)
+    if len(kept) < len(results):
+        logger.info(
+            f"[retriever] dedup: {len(results)} → {len(kept)} "
+            f"（去掉 {len(results)-len(kept)} 个 chunker _dN 重复）"
+        )
+    return kept
