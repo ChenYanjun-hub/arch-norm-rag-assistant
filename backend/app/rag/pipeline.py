@@ -124,6 +124,7 @@ def run_rag_sync(
     top_k_use = int(RETRIEVAL_CONFIG["top_k_rerank"])
 
     # 决策点：是否走 Reranker 精排
+    rerank_used = False  # ★ 本次实际是否成功走 rerank（非 flag 状态）
     if RERANK_ENABLED and raw_results:
         try:
             from app.rag.reranker import rerank
@@ -135,6 +136,7 @@ def run_rag_sync(
             )
             # rerank 后用 reranker 自己的阈值；保留向量 score 作为 fallback 判定的元数据
             kept_payloads = [r["payload"] for r in reranked]
+            rerank_used = True
         except Exception as e:
             logger.warning(f"[pipeline] rerank 失败，回退到 vector top-k：{e}")
             kept_payloads = _select_relevant_chunks(
@@ -150,7 +152,7 @@ def run_rag_sync(
             "n_candidates": len(raw_results),
             "n_kept": len(kept_payloads),
             "min_relevance": min_relevance,
-            "reranked": RERANK_ENABLED,
+            "reranked": rerank_used,  # ★ 实际状态，非 flag
         },
     }
 
