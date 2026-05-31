@@ -80,6 +80,7 @@ models/
 /word/
 /图片/
 
-# Claude Code 本地配置
+# Claude Code 本地配置 + 运行时锁文件
 .claude/settings.local.json
+.claude/*.lock
 
