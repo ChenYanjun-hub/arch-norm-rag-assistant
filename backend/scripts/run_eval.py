@@ -172,6 +172,8 @@ def _run_one(
     use_dedup: bool,
     use_multi_query: bool,
     use_hybrid: bool,
+    rerank_candidate_k: int = 30,
+    passage_format: str = "clause_text",
     rrf_k: int = 60,
 ) -> RowResult | None:
     """跑单条 query。失败返回 None。"""
@@ -224,7 +226,8 @@ def _run_one(
             raw = results_per_path[0] if results_per_path else []
 
         if use_dedup:
-            raw = dedup_results(raw)[:top_k_retrieve]
+            # W3 D4：candidate 保留 rerank_candidate_k 条进 reranker（默认 30）
+            raw = dedup_results(raw)[:rerank_candidate_k]
     except Exception as e:
         logger.error(f"[{row['id']}] retrieval failed: {e}")
         return None
@@ -234,7 +237,14 @@ def _run_one(
         try:
             from app.rag.reranker import rerank
 
-            reranked = rerank(query, raw, top_k=rerank_top_k, min_score=0.0)
+            # W3 D4：评测时显式传 passage_format，方便对比 3 种格式
+            reranked = rerank(
+                query,
+                raw,
+                top_k=rerank_top_k,
+                min_score=0.0,
+                passage_format=passage_format,
+            )
             chunks = [r["payload"] for r in reranked]
             top1_score = reranked[0]["rerank_score"] if reranked else 0.0
             rerank_used = True
@@ -326,6 +336,19 @@ def main() -> None:
         action="store_true",
         help="关闭 hybrid 检索（BM25 + 向量 RRF 融合），方便对比",
     )
+    parser.add_argument(
+        "--rerank-candidate-k",
+        type=int,
+        default=20,
+        help="W3 D4：dedup 后保留 N 条给 reranker（默认 20=baseline 最优）",
+    )
+    parser.add_argument(
+        "--passage-format",
+        type=str,
+        default="text_only",
+        choices=["text_only", "clause_text", "rich"],
+        help="W3 D4：reranker passage 拼接方式（默认 text_only=baseline 最优）",
+    )
     parser.add_argument("--rrf-k", type=int, default=60, help="RRF 融合常数")
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
@@ -344,6 +367,8 @@ def main() -> None:
         f"_dedup_{'on' if use_dedup else 'off'}"
         f"_mq_{'on' if use_multi_query else 'off'}"
         f"_hyb_{'on' if use_hybrid else 'off'}"
+        f"_ck{args.rerank_candidate_k}"
+        f"_pf-{args.passage_format}"
     )
 
     if not args.csv.exists():
@@ -368,6 +393,8 @@ def main() -> None:
         f"dedup={use_dedup} "
         f"multi_query={use_multi_query} "
         f"hybrid={use_hybrid} "
+        f"candidate_k={args.rerank_candidate_k} "
+        f"passage_format={args.passage_format} "
         f"(rrf_k={args.rrf_k})\n"
     )
 
@@ -382,6 +409,8 @@ def main() -> None:
             use_dedup=use_dedup,
             use_multi_query=use_multi_query,
             use_hybrid=use_hybrid,
+            rerank_candidate_k=args.rerank_candidate_k,
+            passage_format=args.passage_format,
             rrf_k=args.rrf_k,
         )
         if res is None:
@@ -454,6 +483,8 @@ def main() -> None:
                     "use_dedup": use_dedup,
                     "use_multi_query": use_multi_query,
                     "use_hybrid": use_hybrid,
+                    "rerank_candidate_k": args.rerank_candidate_k,
+                    "passage_format": args.passage_format,
                     "rrf_k": args.rrf_k,
                     "top_k_retrieve": args.top_k_retrieve,
                     "rerank_top_k": args.rerank_top_k,

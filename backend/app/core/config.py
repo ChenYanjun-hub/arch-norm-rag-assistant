@@ -105,6 +105,25 @@ MULTI_QUERY_MAX_VARIANTS = int(os.getenv("MULTI_QUERY_MAX_VARIANTS", "3"))
 # RRF 融合的 k 常数（业界标准 60）
 MULTI_QUERY_RRF_K = int(os.getenv("MULTI_QUERY_RRF_K", "60"))
 
+# Reranker 输入候选数（W3 D4 加）⚠️ 默认 20 = baseline
+# W3 D4 4 组合实验：
+#   ck=20, pf=text_only  : Hit@5 loose 50.0% (baseline)
+#   ck=30, pf=text_only  : 47.4% (-2.6pp 劣化，候选稀释)
+#   ck=20, pf=clause_text: 47.4% (-2.6pp 劣化)
+#   ck=30, pf=clause_text: 50.0% (持平但时延 +50%)
+# strict 4 个组合全部 2.6% 不动 → reranker 黑盒，参数调整无法解锁 strict
+# 默认保持 20（baseline 最优），保留 env 翻 30 用于未来对照
+RERANK_CANDIDATE_K = int(os.getenv("RERANK_CANDIDATE_K", "20"))
+
+# Reranker 输入 passage 格式（W3 D4 加）⚠️ 默认 text_only = baseline
+# 4 组合实验同上，默认 text_only 是 baseline 最优
+# 保留 clause_text / rich 实现，未来换 reranker 模型时可重新评估
+# 可选：
+#   "text_only"   - 只 chunk.text（W3 D4 baseline 最优）
+#   "clause_text" - "{clause} {text}"（理论上更含语义，实测劣化）
+#   "rich"        - "<规范>{spec_name}</规范> <条文>{clause}</条文> {text}"
+RERANK_PASSAGE_FORMAT = os.getenv("RERANK_PASSAGE_FORMAT", "text_only")
+
 # Hybrid 检索（W3 D3 加）：默认关 ⚠️
 # 实测在 v2 评测集（38 条）上：
 #   hyb=OFF: Hit@5 loose = 50.0%

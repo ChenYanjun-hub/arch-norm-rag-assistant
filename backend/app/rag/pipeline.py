@@ -30,6 +30,7 @@ from app.core.config import (
     HYBRID_ENABLED,
     MULTI_QUERY_ENABLED,
     MULTI_QUERY_RRF_K,
+    RERANK_CANDIDATE_K,
     RERANK_ENABLED,
     RERANK_MIN_SCORE,
     RETRIEVAL_CONFIG,
@@ -178,8 +179,9 @@ def run_rag_sync(
         raw_results = results_per_path[0] if results_per_path else []
 
     # W3 D1：去掉 chunker _dN 后缀产生的 text 重复（同 spec_code + 同文本前缀）
+    # W3 D4：dedup 后保留 RERANK_CANDIDATE_K 条给 reranker（默认 30，原 20）
     n_before_dedup = len(raw_results)
-    raw_results = dedup_results(raw_results)[:top_k_rough]
+    raw_results = dedup_results(raw_results)[:RERANK_CANDIDATE_K]
 
     top_k_use = int(RETRIEVAL_CONFIG["top_k_rerank"])
 
@@ -218,6 +220,7 @@ def run_rag_sync(
             "n_queries": len(queries),
             "hybrid": hybrid_used,  # ★ W3 D3 hybrid 透明度
             "n_paths": len(results_per_path),  # 实际走了多少路（含 BM25）
+            "rerank_candidate_k": RERANK_CANDIDATE_K,  # ★ W3 D4 候选范围透明度
         },
     }
 

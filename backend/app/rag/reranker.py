@@ -117,12 +117,41 @@ def _compute_scores(
     return all_scores
 
 
+def _build_passage(payload: dict[str, Any], passage_format: str) -> str:
+    """根据 RERANK_PASSAGE_FORMAT 拼 passage 字符串。
+
+    W3 D4 加：解决 Q010 这类 "expected 在 reranker 输入 top-20 但被排出 top-5" 的 case。
+    cross-encoder 看到 clause 编号 / 规范名后能更准地判断相关性。
+    """
+    text = payload.get("text", "") or ""
+    if passage_format == "text_only":
+        return text
+    clause = payload.get("clause", "") or ""
+    if passage_format == "clause_text":
+        if clause and text:
+            return f"{clause} {text}"
+        return text or clause
+    if passage_format == "rich":
+        spec_name = payload.get("spec_name", "") or ""
+        parts = []
+        if spec_name:
+            parts.append(f"<规范>{spec_name}</规范>")
+        if clause:
+            parts.append(f"<条文>{clause}</条文>")
+        if text:
+            parts.append(text)
+        return " ".join(parts) if parts else text
+    # 未知格式 → 退化到 text_only
+    return text
+
+
 def rerank(
     query: str,
     candidates: list[dict[str, Any]],
     *,
     top_k: int = 5,
     min_score: float = 0.0,
+    passage_format: str | None = None,
 ) -> list[dict[str, Any]]:
     """对 retriever 召回的 candidates 做精排。
 
@@ -131,6 +160,8 @@ def rerank(
         candidates: list of {"score": float, "payload": dict}（retriever.search 输出）
         top_k: 保留前 N 个
         min_score: 精排分数下限（sigmoid 后 0~1），低于此值过滤
+        passage_format: passage 拼接方式，详见 _build_passage；
+                        None 时从 config 读 RERANK_PASSAGE_FORMAT
 
     Returns:
         list[{"score": float, "rerank_score": float, "payload": dict}]
@@ -142,8 +173,14 @@ def rerank(
     if not candidates:
         return []
 
+    if passage_format is None:
+        from app.core.config import RERANK_PASSAGE_FORMAT
+        passage_format = RERANK_PASSAGE_FORMAT
+
     rk = get_reranker()
-    pairs = [(query, c["payload"].get("text", "")) for c in candidates]
+    pairs = [
+        (query, _build_passage(c["payload"], passage_format)) for c in candidates
+    ]
 
     try:
         scores = _compute_scores(rk.tokenizer, rk.model, rk.device, pairs)
