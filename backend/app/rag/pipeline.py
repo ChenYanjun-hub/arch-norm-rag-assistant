@@ -44,8 +44,16 @@ from app.rag.embedder import embed_one
 from app.rag.generator import stream_chat_sync
 from app.rag.query_rewriter import rewrite_query
 from app.rag.retriever import dedup_results, rrf_fuse, search
-from app.services.fallback import FALLBACK_CHITCHAT, FALLBACK_OUT_OF_SCOPE
-from app.services.scenario import detect_scenario
+from app.services.fallback import (
+    FALLBACK_AMBIGUOUS,
+    FALLBACK_CHITCHAT,
+    FALLBACK_INPUT_EMPTY,
+    FALLBACK_INPUT_TOO_LONG,
+    FALLBACK_OUT_OF_SCOPE,
+    FALLBACK_SENSITIVE,
+    build_fallback_deprecated,
+)
+from app.services.scenario import _detect_deprecated, detect_scenario
 
 logger = logging.getLogger(__name__)
 
@@ -88,24 +96,44 @@ def run_rag_sync(
         {"type": "error", "data": "..."}
         {"type": "fallback", "data": "no_result" | "...}}
     """
-    query = (query or "").strip()
-    if not query:
-        yield {"type": "error", "data": "INPUT_EMPTY: query 不能为空"}
-        return
-    if len(query) > 500:
-        yield {"type": "error", "data": "INPUT_TOO_LONG: query 超过 500 字符上限"}
-        return
+    # W3 D5：不再硬编码 INPUT_EMPTY/TOO_LONG 走 error；统一交给 scenario 走 fallback
+    raw_query = query or ""
+    query = raw_query.strip()
+    logger.info(
+        f"[pipeline] query={query[:60]!r} "
+        f"domain={domain_filter} spec={spec_code_filter}"
+    )
 
-    logger.info(f"[pipeline] query={query[:60]!r} domain={domain_filter} spec={spec_code_filter}")
+    # ── 场景识别短路（CLAUDE.md E.4 判定优先级，8 类全覆盖）──
+    scenario = detect_scenario(raw_query)
+    if scenario != "normal":
+        # 按 scenario 选 fallback 文案
+        if scenario == "input_empty":
+            reply = FALLBACK_INPUT_EMPTY
+        elif scenario == "input_too_long":
+            reply = FALLBACK_INPUT_TOO_LONG
+        elif scenario == "sensitive":
+            reply = FALLBACK_SENSITIVE
+        elif scenario == "deprecated":
+            deprecated_code = _detect_deprecated(query) or ""
+            reply = build_fallback_deprecated(deprecated_code)
+        elif scenario == "chitchat":
+            reply = FALLBACK_CHITCHAT
+        elif scenario == "out_of_scope":
+            reply = FALLBACK_OUT_OF_SCOPE
+        elif scenario == "ambiguous":
+            reply = FALLBACK_AMBIGUOUS
+        else:
+            # 兜底防御：未知 scenario 走通用文案
+            reply = FALLBACK_AMBIGUOUS
 
-    # ── 场景识别短路（CLAUDE.md E.4 判定优先级）──
-    scenario = detect_scenario(query)
-    if scenario in ("chitchat", "out_of_scope"):
-        reply = FALLBACK_CHITCHAT if scenario == "chitchat" else FALLBACK_OUT_OF_SCOPE
         for ch in reply:
             yield {"type": "token", "data": ch}
         yield {"type": "fallback", "data": scenario}
-        yield {"type": "done", "data": {"ttft_ms": 0, "total_ms": 0, "tokens_out": len(reply)}}
+        yield {
+            "type": "done",
+            "data": {"ttft_ms": 0, "total_ms": 0, "tokens_out": len(reply)},
+        }
         return
 
     # 检索
