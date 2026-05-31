@@ -105,4 +105,20 @@ MULTI_QUERY_MAX_VARIANTS = int(os.getenv("MULTI_QUERY_MAX_VARIANTS", "3"))
 # RRF 融合的 k 常数（业界标准 60）
 MULTI_QUERY_RRF_K = int(os.getenv("MULTI_QUERY_RRF_K", "60"))
 
+# Hybrid 检索（W3 D3 加）：默认关 ⚠️
+# 实测在 v2 评测集（38 条）上：
+#   hyb=OFF: Hit@5 loose = 50.0%
+#   hyb=ON:  Hit@5 loose = 47.4% (-2.6pp)
+#   规划域劣化 -7.7pp（典型 case Q021 "280m 服务半径 8 班幼儿园 符合吗"）
+# 根因：评测集偏"问具体数值是否合规"型查询，BM25 召回的"含数值的非答案条款"
+# 挤掉了 BGE-M3 语义关联到的"上限规定"。详见 docs/devlog/2026-05-31_evening_W3D3.md
+# 保留实现（不同评测集 / 关键词型查询场景可能有效），默认关
+HYBRID_ENABLED = os.getenv("HYBRID_ENABLED", "false").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+# BM25 单路召回数：与向量路径同 top_k（rrf_fuse 会自动按 rank 融合）
+HYBRID_BM25_TOP_K = int(os.getenv("HYBRID_BM25_TOP_K", "20"))
+
 settings = Settings()

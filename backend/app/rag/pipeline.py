@@ -26,6 +26,8 @@ from collections.abc import Iterator
 from typing import Any
 
 from app.core.config import (
+    HYBRID_BM25_TOP_K,
+    HYBRID_ENABLED,
     MULTI_QUERY_ENABLED,
     MULTI_QUERY_RRF_K,
     RERANK_ENABLED,
@@ -121,32 +123,59 @@ def run_rag_sync(
     else:
         queries = [query]
 
-    # 多 query 顺序 embed（Qdrant 本地文件锁不能并发）+ 顺序 search
+    # W3 D3：决定是否走 hybrid（BM25 + 向量）
+    hybrid_used = False
+    bm25_search_fn = None
+    if HYBRID_ENABLED:
+        try:
+            from app.rag.bm25_indexer import bm25_search as _bs
+            bm25_search_fn = _bs
+            hybrid_used = True
+        except ImportError as e:
+            logger.warning(f"[pipeline] BM25 不可用，降级纯向量：{e}")
+
+    # 多 query 顺序 embed/search + 可选 BM25（Qdrant 锁不能并发）
+    # W3 D3 评测发现：BM25 跟 4 个变体都走（8 路融合）反而降 -2.6pp
+    # 根因：BM25 短语精确但相关性弱于 BGE-M3，等权重融合时挤掉好结果
+    # 修复：BM25 只跟原始 query 走 1 路（权重从 50% 降到 20%）
     try:
-        results_per_query: list[list[dict[str, Any]]] = []
-        for q in queries:
+        results_per_path: list[list[dict[str, Any]]] = []
+        for i, q in enumerate(queries):
             qvec = embed_one(q)
-            r = search(
+            vec_r = search(
                 qvec,
                 top_k=top_k_rough * 2,  # 粗排放大 2× 补偿后续 dedup 损耗
                 domain_filter=domain_filter,
                 spec_code_filter=spec_code_filter,
             )
-            results_per_query.append(r)
+            results_per_path.append(vec_r)
+
+            # BM25 只对原始 query (i=0) 走一次，避免被 LLM 变体污染 + 权重过大
+            if i == 0 and bm25_search_fn is not None:
+                try:
+                    bm25_r = bm25_search_fn(
+                        q,
+                        top_k=HYBRID_BM25_TOP_K * 2,
+                        domain_filter=domain_filter,
+                        spec_code_filter=spec_code_filter,
+                    )
+                    results_per_path.append(bm25_r)
+                except Exception as e:
+                    logger.warning(f"[pipeline] BM25 search 失败，跳过本路：{e}")
     except Exception as e:
         logger.exception(f"[pipeline] embed/search 失败: {e}")
         yield {"type": "error", "data": f"RETRIEVAL_FAILED: {e}"}
         return
 
-    # RRF 融合（只在多 query 时走）；单 query 直接用唯一一路
-    if multi_query_used and len(results_per_query) > 1:
+    # RRF 融合（多路时走，单路直接用）
+    if len(results_per_path) > 1:
         raw_results = rrf_fuse(
-            results_per_query,
+            results_per_path,
             k=MULTI_QUERY_RRF_K,
             top_k=top_k_rough * 2,  # 留余量给 dedup
         )
     else:
-        raw_results = results_per_query[0] if results_per_query else []
+        raw_results = results_per_path[0] if results_per_path else []
 
     # W3 D1：去掉 chunker _dN 后缀产生的 text 重复（同 spec_code + 同文本前缀）
     n_before_dedup = len(raw_results)
@@ -187,6 +216,8 @@ def run_rag_sync(
             "reranked": rerank_used,  # ★ 实际状态，非 flag
             "multi_query": multi_query_used,  # ★ W3 D2 multi-query 透明度
             "n_queries": len(queries),
+            "hybrid": hybrid_used,  # ★ W3 D3 hybrid 透明度
+            "n_paths": len(results_per_path),  # 实际走了多少路（含 BM25）
         },
     }
 
