@@ -25,7 +25,13 @@ import logging
 from collections.abc import Iterator
 from typing import Any
 
-from app.core.config import RERANK_ENABLED, RERANK_MIN_SCORE, RETRIEVAL_CONFIG
+from app.core.config import (
+    MULTI_QUERY_ENABLED,
+    MULTI_QUERY_RRF_K,
+    RERANK_ENABLED,
+    RERANK_MIN_SCORE,
+    RETRIEVAL_CONFIG,
+)
 from app.core.prompts import (
     NO_RESULT_REPLY,
     SYSTEM_PROMPT_MAIN,
@@ -33,7 +39,8 @@ from app.core.prompts import (
 )
 from app.rag.embedder import embed_one
 from app.rag.generator import stream_chat_sync
-from app.rag.retriever import dedup_results, search
+from app.rag.query_rewriter import rewrite_query
+from app.rag.retriever import dedup_results, rrf_fuse, search
 from app.services.fallback import FALLBACK_CHITCHAT, FALLBACK_OUT_OF_SCOPE
 from app.services.scenario import detect_scenario
 
@@ -102,25 +109,44 @@ def run_rag_sync(
     top_k_rough = int(top_k or RETRIEVAL_CONFIG["top_k_rough"])
     min_relevance = float(RETRIEVAL_CONFIG["min_relevance"])
 
+    # ── W3 D2：query 改写（多 query 攻 BGE-M3 语义偏）──────────────
+    multi_query_used = False  # 本次实际是否走多 query 路径
+    if MULTI_QUERY_ENABLED:
+        try:
+            queries = rewrite_query(query)  # [原 q, 变体1..N]，失败时仅含原 q
+            multi_query_used = len(queries) > 1
+        except Exception as e:
+            logger.warning(f"[pipeline] query 改写异常，降级单 query: {e}")
+            queries = [query]
+    else:
+        queries = [query]
+
+    # 多 query 顺序 embed（Qdrant 本地文件锁不能并发）+ 顺序 search
     try:
-        qvec = embed_one(query)
+        results_per_query: list[list[dict[str, Any]]] = []
+        for q in queries:
+            qvec = embed_one(q)
+            r = search(
+                qvec,
+                top_k=top_k_rough * 2,  # 粗排放大 2× 补偿后续 dedup 损耗
+                domain_filter=domain_filter,
+                spec_code_filter=spec_code_filter,
+            )
+            results_per_query.append(r)
     except Exception as e:
-        logger.exception(f"[pipeline] embed 失败: {e}")
-        yield {"type": "error", "data": f"RETRIEVAL_EMBED_FAILED: {e}"}
+        logger.exception(f"[pipeline] embed/search 失败: {e}")
+        yield {"type": "error", "data": f"RETRIEVAL_FAILED: {e}"}
         return
 
-    try:
-        # W3 D1：粗排放大 2× 以补偿 dedup 损耗，dedup 后保留约 top_k_rough 条
-        raw_results = search(
-            qvec,
-            top_k=top_k_rough * 2,
-            domain_filter=domain_filter,
-            spec_code_filter=spec_code_filter,
+    # RRF 融合（只在多 query 时走）；单 query 直接用唯一一路
+    if multi_query_used and len(results_per_query) > 1:
+        raw_results = rrf_fuse(
+            results_per_query,
+            k=MULTI_QUERY_RRF_K,
+            top_k=top_k_rough * 2,  # 留余量给 dedup
         )
-    except Exception as e:
-        logger.exception(f"[pipeline] search 失败: {e}")
-        yield {"type": "error", "data": f"RETRIEVAL_SEARCH_FAILED: {e}"}
-        return
+    else:
+        raw_results = results_per_query[0] if results_per_query else []
 
     # W3 D1：去掉 chunker _dN 后缀产生的 text 重复（同 spec_code + 同文本前缀）
     n_before_dedup = len(raw_results)
@@ -159,6 +185,8 @@ def run_rag_sync(
             "n_before_dedup": n_before_dedup,  # ★ W3 D1 dedup 透明度
             "min_relevance": min_relevance,
             "reranked": rerank_used,  # ★ 实际状态，非 flag
+            "multi_query": multi_query_used,  # ★ W3 D2 multi-query 透明度
+            "n_queries": len(queries),
         },
     }
 

@@ -212,6 +212,70 @@ def _norm_text_for_dedup(text: str, prefix_len: int = 200) -> str:
     return "".join((text or "").split())[:prefix_len]
 
 
+# ── 多 query 检索融合（W3 D2 加） ───────────────────────────
+#
+# 背景：W3 D1 诊断发现 BGE-M3 在专业规范文本上有语义偏。query_rewriter
+# 把 1 个 query 扩成多个变体后，每个变体独立 search 得到 top-K，需要
+# 一种"互不冲突的合理融合"。RRF（Reciprocal Rank Fusion）是业界标准方法：
+#
+#   score(d) = Σ_q  1 / (k + rank_q(d))
+#
+# k 默认 60 是论文经验值。RRF 优点：
+#   - 不依赖原始 score 的绝对量纲（不同 query 的 cosine 分布可能差很多）
+#   - 对 rank 单调递减，多次出现的文档分数累加
+#   - 实现 5 行内
+
+
+def rrf_fuse(
+    results_per_query: list[list[dict[str, Any]]],
+    *,
+    k: int = 60,
+    top_k: int | None = None,
+) -> list[dict[str, Any]]:
+    """RRF 融合多路检索结果。
+
+    Args:
+        results_per_query: 每路 search 返回的 list[{score, payload}]，
+                           顺序即排名（已按 score 降序）
+        k: RRF 常数（业界标准 60）
+        top_k: 融合后返回前 N 条；None 表示返回全部
+
+    Returns:
+        融合后的列表，按 RRF 分数降序；每项含
+        {"score": rrf_score (float), "payload": payload, "_rrf_contrib": int}
+        其中 _rrf_contrib 是该文档被多少路命中（用于可观测性）
+
+    唯一标识：优先用 payload["chunk_id"]，缺失时退化用文本前缀 hash。
+    """
+    if not results_per_query:
+        return []
+
+    accum: dict[str, dict[str, Any]] = {}
+    for results in results_per_query:
+        for rank, r in enumerate(results, start=1):
+            p = r.get("payload") or {}
+            doc_id = p.get("chunk_id")
+            if not doc_id:
+                # 退化方案：spec_code + 文本前缀
+                doc_id = (p.get("spec_code") or "") + "#" + (p.get("text") or "")[:100]
+
+            entry = accum.get(doc_id)
+            if entry is None:
+                entry = {"score": 0.0, "payload": p, "_rrf_contrib": 0}
+                accum[doc_id] = entry
+            entry["score"] += 1.0 / (k + rank)
+            entry["_rrf_contrib"] += 1
+
+    fused = sorted(accum.values(), key=lambda x: x["score"], reverse=True)
+    if top_k is not None:
+        fused = fused[:top_k]
+    logger.info(
+        f"[retriever] rrf_fuse: {len(results_per_query)} 路 "
+        f"→ {len(fused)} 唯一文档（k={k}）"
+    )
+    return fused
+
+
 def dedup_results(
     results: list[dict[str, Any]],
     *,

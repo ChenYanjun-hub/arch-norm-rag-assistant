@@ -170,10 +170,13 @@ def _run_one(
     use_rerank: bool,
     rerank_top_k: int,
     use_dedup: bool,
+    use_multi_query: bool,
+    rrf_k: int = 60,
 ) -> RowResult | None:
     """跑单条 query。失败返回 None。"""
     from app.rag.embedder import embed_one
-    from app.rag.retriever import dedup_results, search
+    from app.rag.query_rewriter import rewrite_query
+    from app.rag.retriever import dedup_results, rrf_fuse, search
 
     query = row["query"].strip()
     expected_spec = row.get("expected_spec", "").strip()
@@ -181,10 +184,31 @@ def _run_one(
 
     t0 = time.time()
     try:
-        qvec = embed_one(query)
+        # W3 D2：query 改写（攻 BGE-M3 语义偏）
+        if use_multi_query:
+            queries = rewrite_query(query)  # 失败时仅含原 query
+        else:
+            queries = [query]
+
+        # 顺序 embed + search（Qdrant 本地文件锁不能并发）
         # W3 D1：dedup 时粗排放大 2× 补偿损耗
         rough_factor = 2 if use_dedup else 1
-        raw = search(qvec, top_k=top_k_retrieve * rough_factor)
+        results_per_query: list[list[dict[str, Any]]] = []
+        for q in queries:
+            qvec = embed_one(q)
+            r = search(qvec, top_k=top_k_retrieve * rough_factor)
+            results_per_query.append(r)
+
+        # 多 query → RRF 融合；单 query → 直接用唯一一路
+        if len(results_per_query) > 1:
+            raw = rrf_fuse(
+                results_per_query,
+                k=rrf_k,
+                top_k=top_k_retrieve * rough_factor,
+            )
+        else:
+            raw = results_per_query[0] if results_per_query else []
+
         if use_dedup:
             raw = dedup_results(raw)[:top_k_retrieve]
     except Exception as e:
@@ -278,6 +302,12 @@ def main() -> None:
     )
     parser.add_argument("--no-rerank", action="store_true")
     parser.add_argument("--no-dedup", action="store_true", help="关闭 chunker _dN 内容级去重，方便对比")
+    parser.add_argument(
+        "--no-multi-query",
+        action="store_true",
+        help="关闭 query 改写（多 query + RRF），方便对比",
+    )
+    parser.add_argument("--rrf-k", type=int, default=60, help="RRF 融合常数")
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
 
@@ -288,7 +318,12 @@ def main() -> None:
 
     use_rerank = not args.no_rerank
     use_dedup = not args.no_dedup
-    label = f"rerank_{'on' if use_rerank else 'off'}_dedup_{'on' if use_dedup else 'off'}"
+    use_multi_query = not args.no_multi_query
+    label = (
+        f"rerank_{'on' if use_rerank else 'off'}"
+        f"_dedup_{'on' if use_dedup else 'off'}"
+        f"_mq_{'on' if use_multi_query else 'off'}"
+    )
 
     if not args.csv.exists():
         print(f"❌ 评测集 CSV 不存在：{args.csv}", file=sys.stderr)
@@ -309,7 +344,8 @@ def main() -> None:
     print(
         f"   参数：top_k_retrieve={args.top_k_retrieve} "
         f"rerank_top_k={args.rerank_top_k} "
-        f"dedup={use_dedup}\n"
+        f"dedup={use_dedup} "
+        f"multi_query={use_multi_query} (rrf_k={args.rrf_k})\n"
     )
 
     results: list[RowResult] = []
@@ -321,6 +357,8 @@ def main() -> None:
             use_rerank=use_rerank,
             rerank_top_k=args.rerank_top_k,
             use_dedup=use_dedup,
+            use_multi_query=use_multi_query,
+            rrf_k=args.rrf_k,
         )
         if res is None:
             continue
@@ -389,6 +427,9 @@ def main() -> None:
                 "config": {
                     "csv": str(args.csv),
                     "use_rerank": use_rerank,
+                    "use_dedup": use_dedup,
+                    "use_multi_query": use_multi_query,
+                    "rrf_k": args.rrf_k,
                     "top_k_retrieve": args.top_k_retrieve,
                     "rerank_top_k": args.rerank_top_k,
                     "n_eval": len(eval_rows),

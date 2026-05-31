@@ -91,4 +91,18 @@ LLM_MAX_RETRIES = 1
 RERANK_ENABLED = os.getenv("RERANK_ENABLED", "true").lower() in ("1", "true", "yes")
 RERANK_MIN_SCORE = float(os.getenv("RERANK_MIN_SCORE", "0.1"))
 
+# Multi-query 改写（W3 D2 加）：默认开
+# 解决 BGE-M3 在专业规范文本上的语义偏（详见 docs/design/retrieval_v2.md）
+MULTI_QUERY_ENABLED = os.getenv("MULTI_QUERY_ENABLED", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+# 改写超时：超过则降级走单 query（保 TTFT 不爆 3s SLA）
+MULTI_QUERY_TIMEOUT_SECONDS = float(os.getenv("MULTI_QUERY_TIMEOUT_SECONDS", "3.0"))
+# 期望的变体数（不含原 query），LLM 拿不到那么多时按实际返回
+MULTI_QUERY_MAX_VARIANTS = int(os.getenv("MULTI_QUERY_MAX_VARIANTS", "3"))
+# RRF 融合的 k 常数（业界标准 60）
+MULTI_QUERY_RRF_K = int(os.getenv("MULTI_QUERY_RRF_K", "60"))
+
 settings = Settings()
