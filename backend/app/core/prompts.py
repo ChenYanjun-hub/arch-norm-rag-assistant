@@ -136,3 +136,69 @@ def build_user_prompt(query: str, chunks: list[dict[str, Any]]) -> str:
         chunks_block=format_chunks_block(chunks),
         query=query.strip(),
     )
+
+
+# ──────────────────────────────────────────────
+# Query 改写（W3 D2 加 · 攻 BGE-M3 语义偏）
+# ──────────────────────────────────────────────
+#
+# 背景：W3 D1 评测诊断发现，BGE-M3 在专业规范文本上有显著语义偏差。
+# 典型 case：
+#   - Q010 "办公建筑的耐火等级最低要求？" → expected GB 55037-2022 5.1.3
+#     但 top-20 全是 5.2/5.3 章节，5.1 章节直到 rank 11 才出现
+#   - 原因：BGE-M3 把"耐火等级"匹配到"5.3 防火等级条款"，
+#           错过"5.1 耐火分类章节"
+#
+# 解决：用 LLM 把单 query 扩成 3 个语义相关变体，从 3 个角度召回，
+# 再 RRF 融合。多路视角能补齐单一 embedding 的偏差。
+
+SYSTEM_PROMPT_QUERY_REWRITE = """\
+你是一位规范检索查询改写专家。任务：把用户的 1 个原始查询改写为 3 个变体，用于多路检索后融合。
+
+【目标】
+解决向量模型在专业规范文本上的语义偏：用户用一种说法表达，但规范条文常用另一种术语，单一 query 容易漏召回相关章节。
+
+【改写规则】
+1. 三个变体共同覆盖以下 3 种视角（各负责一种）：
+   - 变体 1：同义词/近义词替换（如"耐火等级" ↔ "耐火极限要求"，"服务半径" ↔ "配建距离"）
+   - 变体 2：补全专业术语和领域背景词（如加入"民用建筑""建筑分类""高度限值""配套设施"等）
+   - 变体 3：把隐含的章节性关键词显化（如把"分类"显化为"一类/二类""高层/多层"等划分词）
+2. 每个变体必须保留原始查询的核心意图，不可扩展到无关问题。
+3. 每个变体 30 字以内，简洁。
+4. 严格输出 JSON 数组，格式：["变体1", "变体2", "变体3"]
+5. 不输出任何解释、前缀、Markdown 围栏，只输出 JSON 数组本身。
+
+【示例 1】
+原 query: 办公建筑的耐火等级最低要求？
+输出: ["民用建筑办公楼最低耐火等级", "办公建筑 耐火极限 一级二级分类", "办公建筑高度划分 耐火等级 多层高层"]
+
+【示例 2】
+原 query: 居住区配套幼儿园的服务半径不应大于多少米？
+输出: ["居住区幼儿园服务半径上限", "配套教育设施 幼儿园 服务半径规定", "十五分钟生活圈 幼儿园 配建距离"]
+
+【示例 3】
+原 query: 高层民用建筑分类标准？
+输出: ["民用建筑分类 一类二类高层", "高层建筑高度 27m 24m 划分标准", "建筑分类 民用建筑 高层多层定义"]
+"""
+
+USER_PROMPT_QUERY_REWRITE_TEMPLATE = """\
+原 query: {query}
+输出（仅 JSON 数组，3 个变体）:"""
+
+
+def build_query_rewrite_messages(query: str) -> list[dict[str, str]]:
+    """构造 query 改写的 chat messages。
+
+    Returns:
+        [
+          {"role": "system", "content": SYSTEM_PROMPT_QUERY_REWRITE},
+          {"role": "user", "content": USER_PROMPT_QUERY_REWRITE_TEMPLATE.format(...)}
+        ]
+    """
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT_QUERY_REWRITE},
+        {
+            "role": "user",
+            "content": USER_PROMPT_QUERY_REWRITE_TEMPLATE.format(query=query.strip()),
+        },
+    ]
