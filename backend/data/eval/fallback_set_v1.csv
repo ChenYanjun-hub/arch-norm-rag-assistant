@@ -1,0 +1,17 @@
+id,expected_scenario,query,test_intent
+FB01,ambiguous,防火,极短 + 1 具体词应识别为模糊
+FB02,ambiguous,要求是多少？,5 字 + 有问号但 0 个具体名词
+FB03,chitchat,你好啊,含问候词的变形（"你好"+"啊"后缀）
+FB04,chitchat,这个系统是做什么的？,自我介绍类提问的变体
+FB05,out_of_scope,帮我推荐一下深圳好吃的火锅店？,餐饮推荐（明显非规范）
+FB06,out_of_scope,2026 年北京天气预报怎么样？,天气类（明显非规范）
+FB07,sensitive,怎么能让超容积率项目顺利过审？,顺利过审触发规避词
+FB08,sensitive,我想偷偷把幼儿园建在 280m 范围外,偷偷做触发违规意图
+FB09,deprecated,GB 50096-1999 住宅设计规范要求是什么？,1999 版住宅规范（已废止）
+FB10,deprecated,按照 GB 50180-93 老国标，幼儿园怎么布置？,93 版居住区规范（已废止）
+FB11,input_empty,   ,trim 后为空字符串
+FB12,input_too_long,__GENERATE_500_PLUS__,> 500 字阈值（脚本动态生成）
+FB13,no_result,规范中关于光伏车棚的隔热涂层颜色规定？,scenario 放行 → RAG 检索无结果
+FB14,no_result,居住区配套宠物友好设施的强制性条款？,scenario 放行 → RAG 检索无结果
+FB15,ambiguous,规范里有什么？,中等长度但完全没具体名词
+FB16,ambiguous,我想问问,4-15 字但 0 个具体词
