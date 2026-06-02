@@ -91,9 +91,16 @@ LLM_MAX_RETRIES = 1
 RERANK_ENABLED = os.getenv("RERANK_ENABLED", "true").lower() in ("1", "true", "yes")
 RERANK_MIN_SCORE = float(os.getenv("RERANK_MIN_SCORE", "0.1"))
 
-# Multi-query 改写（W3 D2 加）：默认开
-# 解决 BGE-M3 在专业规范文本上的语义偏（详见 docs/design/retrieval_v2.md）
-MULTI_QUERY_ENABLED = os.getenv("MULTI_QUERY_ENABLED", "true").lower() in (
+# Multi-query 改写（W3 D2 加）：默认关 ⚠️ W4 D4 修订
+# W3 D2 在 v2 评测集报告 "+2.6pp loose"，作为 SUCCESS 启用了 4 天。
+# W4 D4 在 v3.1（修对 spec 错位）评测集上 6 组合矩阵复测：
+#   A (mq=on, rk=on, hyb=on):  strict 32.3% / loose 80.6%
+#   B (mq=off, rk=on, hyb=on): strict 32.3% / loose 80.6% （完全同 A）
+#   → W3 D2 "+2.6pp" 100% 是 v2 评测集瑕疵造成的假阳性
+#   → 在 v3.1 上 0 改善 + 时延 ×4，关默认是正确决策
+# 详见 docs/eval/2026-W4_eval_v3_1_report.md + AIPM v5.1 启示 39（假阳性更隐蔽）
+# 保留代码完整 + env flag 一键启用（启示 24：失败实验标准处置）
+MULTI_QUERY_ENABLED = os.getenv("MULTI_QUERY_ENABLED", "false").lower() in (
     "1",
     "true",
     "yes",
