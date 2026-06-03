@@ -84,3 +84,6 @@ models/
 .claude/settings.local.json
 .claude/*.lock
 
+
+# W6 D1 OCR fix 备份（大文件，不入仓）
+backend/data/_backup_*/
