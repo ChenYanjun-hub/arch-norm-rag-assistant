@@ -25,11 +25,22 @@ export interface DoneMeta {
   tokens_out: number
 }
 
+/** W5 D4 + W6 D2：pipeline 元数据（dangling 监控 + post_filter 状态） */
+export interface PipelineMeta {
+  dangling_count: number
+  n_citations_in_answer: number
+  n_chunks_available: number
+  post_filter_stripped_chars?: number
+  post_filter_applied?: boolean
+}
+
 /** SSE 事件类型 */
 export type SSEEventType =
   | 'retrieval'
   | 'token'
   | 'citations'
+  | 'metadata'
+  | 'revised_answer'
   | 'fallback'
   | 'done'
   | 'error'
@@ -38,6 +49,8 @@ export type SSEEvent =
   | { type: 'retrieval'; data: RetrievalMeta }
   | { type: 'token'; data: string }
   | { type: 'citations'; data: Citation[] }
+  | { type: 'metadata'; data: PipelineMeta }
+  | { type: 'revised_answer'; data: string }
   | { type: 'fallback'; data: string }
   | { type: 'done'; data: DoneMeta }
   | { type: 'error'; data: string }
@@ -52,6 +65,10 @@ export interface ChatMessage {
   done?: DoneMeta
   fallback?: string
   error?: string
+  /** W6 D2：pipeline 元数据（dangling / post_filter 状态） */
+  meta?: PipelineMeta
+  /** W6 D2：post_filter 触发时 LLM 原始回答（剥离前），保留供 debug */
+  rawContent?: string
   /** assistant 消息流式中 */
   streaming?: boolean
 }

@@ -294,20 +294,37 @@ def run_rag_sync(
             f"(refs={dangling_refs}, n_chunks={n_chunks})"
         )
 
+    # W6 D2：post_filter 剥离"补充说明"节，治 LLM 训练惯性导致的 dim7 编造（启示 52+54）
+    from app.rag.post_filter import strip_supplementary_sections
+    cleaned_answer, n_stripped_chars = strip_supplementary_sections(full_answer)
+    if n_stripped_chars > 0:
+        logger.info(
+            f"[pipeline] post_filter stripped {n_stripped_chars} 字（"
+            f"原 {len(full_answer)} → 净 {len(cleaned_answer)}）"
+        )
+
     # citations 在 done 之前下发，让前端可以"答案完→显示引用"
     yield {
         "type": "citations",
         "data": [_build_citation(p) for p in kept_payloads],
     }
-    # W5 D4 新增：metadata 事件携带 dangling_count（不影响现有消费方，可选监听）
+    # W5 D4 + W6 D2：metadata 事件携带 dangling_count + post_filter 信息
     yield {
         "type": "metadata",
         "data": {
             "dangling_count": dangling_count,
             "n_citations_in_answer": len(citation_refs),
             "n_chunks_available": n_chunks,
+            "post_filter_stripped_chars": n_stripped_chars,
+            "post_filter_applied": n_stripped_chars > 0,
         },
     }
+    # W6 D2：revised_answer 事件 — 有剥离时下发清洁版（前端覆盖 / 评测优先消费）
+    if n_stripped_chars > 0:
+        yield {
+            "type": "revised_answer",
+            "data": cleaned_answer,
+        }
     if done_event:
         yield done_event
     else:

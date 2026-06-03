@@ -63,6 +63,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
           case 'citations':
             patch((m) => ({ ...m, citations: evt.data }))
             break
+          case 'metadata':
+            // W6 D2：保存 dangling / post_filter 状态供 UI / debug
+            patch((m) => ({ ...m, meta: evt.data }))
+            break
+          case 'revised_answer':
+            // W6 D2：post_filter 剥离了"补充说明"节，用净化版覆盖 content
+            // 原 content（streaming 中拼出的 LLM 原始回答）存到 rawContent，便于 debug
+            patch((m) => ({ ...m, rawContent: m.content, content: evt.data }))
+            break
           case 'fallback':
             patch((m) => ({ ...m, fallback: evt.data }))
             break

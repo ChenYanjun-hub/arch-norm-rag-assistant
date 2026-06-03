@@ -130,21 +130,30 @@ class QualityResult:
 
 
 def _run_pipeline(query: str) -> tuple[str, list[dict[str, Any]]]:
-    """跑 1 次 RAG pipeline，返回 (answer, citations)。"""
+    """跑 1 次 RAG pipeline，返回 (answer, citations)。
+
+    W6 D2：优先消费 `revised_answer` 事件（post_filter 净化版），
+    否则回退到 token 拼接。这样评测 dim7 编造时看到的是 RAG 系统真实输出。
+    """
     from app.rag.pipeline import run_rag_sync
     tokens: list[str] = []
     citations: list[dict[str, Any]] = []
+    revised: str | None = None
     for evt in run_rag_sync(query):
         if evt["type"] == "token":
             tokens.append(evt["data"])
         elif evt["type"] == "citations":
             citations = evt["data"]
+        elif evt["type"] == "revised_answer":
+            # W6 D2：post_filter 已剥离补充说明节，用净化版做 Judge
+            revised = evt["data"]
         elif evt["type"] in ("done", "fallback"):
             break
         elif evt["type"] == "error":
             logger.warning(f"[quality] pipeline 错误: {evt['data']}")
             break
-    return "".join(tokens), citations
+    final_answer = revised if revised is not None else "".join(tokens)
+    return final_answer, citations
 
 
 # ── LLM Judge 调用 ────────────────────────────────────────
