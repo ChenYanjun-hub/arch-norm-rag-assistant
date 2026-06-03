@@ -2,7 +2,7 @@
 // 显示当前最新一条 assistant 消息的引用列表
 
 import { useEffect, useRef } from 'react'
-import type { Citation } from '../types/chat'
+import type { Citation, PipelineMeta } from '../types/chat'
 import { CitationCard } from './CitationCard'
 
 interface Props {
@@ -10,9 +10,11 @@ interface Props {
   /** 当前 inline 角标选中（W3 接 highlight） */
   activeIndex?: number | null
   onActiveChange?: (i: number) => void
+  /** W6 D4：pipeline 治理透明度（dangling / post_filter / modal align） */
+  meta?: PipelineMeta
 }
 
-export function RightPanel({ citations, activeIndex, onActiveChange }: Props) {
+export function RightPanel({ citations, activeIndex, onActiveChange, meta }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const cardRefs = useRef<Record<number, HTMLDivElement | null>>({})
 
@@ -66,6 +68,52 @@ export function RightPanel({ citations, activeIndex, onActiveChange }: Props) {
             关联
           </button>
         </div>
+
+        {/* W6 D4：pipeline 治理透明度 — 三个角标 + tooltip */}
+        {meta && (
+          <div
+            style={{
+              display: 'flex',
+              gap: 8,
+              padding: '8px 0 4px',
+              fontSize: 10.5,
+              color: 'var(--ink-mute)',
+              fontFamily: 'var(--font-mono)',
+              borderTop: '1px dashed var(--border)',
+              marginTop: 2,
+            }}
+            title="后处理治理透明度（W5 D4 / W6 D2 / W6 D4 集成）"
+          >
+            <span
+              style={{
+                color: (meta.dangling_count ?? 0) > 0 ? '#c25450' : 'var(--ink-faint)',
+              }}
+              title={`dangling [N] 引用: ${meta.dangling_count ?? 0} 个越界（W5 D4 监控）`}
+            >
+              ⚑ {meta.dangling_count ?? 0}
+            </span>
+            <span
+              style={{
+                color:
+                  (meta.post_filter_stripped_chars ?? 0) > 0
+                    ? '#2e7d32'
+                    : 'var(--ink-faint)',
+              }}
+              title={`post_filter 剥离 "补充说明" 节: ${meta.post_filter_stripped_chars ?? 0} 字（W6 D2 治理 dim7 编造）`}
+            >
+              ✂ {meta.post_filter_stripped_chars ?? 0}
+            </span>
+            <span
+              style={{
+                color:
+                  (meta.modal_verb_corrections ?? 0) > 0 ? '#1565c0' : 'var(--ink-faint)',
+              }}
+              title={`align_modal_verbs 量词校正: ${meta.modal_verb_corrections ?? 0} 处（W6 D4 治理 dim4 用词错）`}
+            >
+              ✎ {meta.modal_verb_corrections ?? 0}
+            </span>
+          </div>
+        )}
       </div>
 
       <div

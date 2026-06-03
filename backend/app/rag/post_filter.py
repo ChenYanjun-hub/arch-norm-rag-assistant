@@ -95,3 +95,193 @@ def detect_supplementary_sections(answer: str) -> list[str]:
             preview = m.group(0)[:60].replace("\n", " ")
             matches.append(f"{label}: {preview}...")
     return matches
+
+
+# ──────────────────────────────────────────────
+# W6 D4 · 量词对齐（治 dim4 用词错训练惯性，启示 58 落地）
+# ──────────────────────────────────────────────
+#
+# 背景：W6 D3 失败实验证明 5 条 few-shot 反例对 dim4 用词错完全无效
+# （+0pp / 综合 -0.7）。dim4 错与 dim7 编造同源 — LLM 标准化训练惯性，
+# prompt 治不了。必须靠后处理代码层 diff chunks 原词 → 自动校正。
+#
+# 算法：Anchor-Match
+#   1. 从 chunks 提取所有量词位置 + 前后 N 字上下文（"anchor"）
+#   2. 同样从 LLM answer 提取
+#   3. 对每个 answer anchor，找 chunks anchors 中匹配度最高的
+#   4. 如 chunks 量词 ≠ answer 量词 + 匹配度足够高 → 用 chunks 量词替换
+#
+# 量词法定语义层级（按强度从高到低）：
+#   严禁 / 必须 > 不应 / 不得 > 应 > 不宜 > 宜 > 不可 > 可
+#
+# **按长度从长到短匹配**，避免 "不应" 被识别为 "应"（子串问题）
+
+MODAL_VERBS = [
+    "严禁", "必须",      # 最强
+    "不应", "不宜", "不得", "不可",  # 否定性量词（长度 2，优先）
+    "应", "宜", "可",    # 肯定性量词（长度 1，最后）
+]
+
+_MODAL_PATTERN = re.compile(
+    "|".join(re.escape(v) for v in sorted(MODAL_VERBS, key=lambda x: -len(x)))
+)
+
+
+def _extract_modal_anchors(text: str, ctx_len: int = 8) -> list[tuple[int, str, str, str]]:
+    """从 text 中提取所有量词的 anchor：(pos, prefix, verb, suffix)。
+
+    prefix = 量词前 ctx_len 字
+    suffix = 量词后 ctx_len 字
+
+    避免子串匹配（"不应" 不会被切成 "不" + "应"），靠 _MODAL_PATTERN
+    按长度从长到短匹配 + non-overlapping iter 保证。
+    """
+    anchors: list[tuple[int, str, str, str]] = []
+    last_end = 0
+    for m in _MODAL_PATTERN.finditer(text):
+        pos = m.start()
+        if pos < last_end:  # 跳过被前一个长量词吃掉的位置
+            continue
+        verb = m.group(0)
+        prefix = text[max(0, pos - ctx_len):pos]
+        suffix = text[pos + len(verb):pos + len(verb) + ctx_len]
+        anchors.append((pos, prefix, verb, suffix))
+        last_end = pos + len(verb)
+    return anchors
+
+
+def _match_chars_tail(s1: str, s2: str) -> int:
+    """两个字符串从右向左匹配的连续相同字符数。用于 prefix（量词前的 context）。"""
+    count = 0
+    for c1, c2 in zip(reversed(s1), reversed(s2)):
+        if c1 == c2:
+            count += 1
+        else:
+            break
+    return count
+
+
+def _match_chars_head(s1: str, s2: str) -> int:
+    """两个字符串从左向右匹配的连续相同字符数。用于 suffix（量词后的 context）。"""
+    count = 0
+    for c1, c2 in zip(s1, s2):
+        if c1 == c2:
+            count += 1
+        else:
+            break
+    return count
+
+
+# W6 D4：方向词集合 — 用于检测"语义翻转 case"
+# 如 chunks "宜大于"、answer "不应小于"，简单替换量词会产出"宜小于"荒谬词
+# 保守策略：方向词不一致时跳过，不改这种 case（让 dim4 仍标记错，但不会变错）
+_DIRECTION_CHARS = {"大", "小", "高", "低", "多", "少", "长", "短"}
+
+
+def align_modal_verbs(
+    answer: str,
+    chunks_texts: list[str],
+    *,
+    min_match_chars: int = 5,
+) -> tuple[str, int]:
+    """W6 D4：自动校正 answer 中的量词使其与 chunks 一致。
+
+    保守策略：
+    - 只在 prefix tail + suffix head 至少匹配 min_match_chars 字时改
+    - 方向词不一致（如"大" vs "小"）跳过，避免产出"宜小于"荒谬词
+    - 防止误伤 LLM 总结句、概括陈述
+
+    Args:
+        answer: LLM 完整输出
+        chunks_texts: 检索到的 chunks 原文列表
+        min_match_chars: prefix + suffix 至少匹配多少字才认为是"同一规范条文"
+
+    Returns:
+        (aligned_answer, n_corrections)：校正后 + 改动数
+    """
+    if not answer or not chunks_texts:
+        return answer, 0
+
+    # 1. 从所有 chunks 提取量词锚点
+    chunks_anchors: list[tuple[str, str, str]] = []  # (prefix, verb, suffix)
+    for text in chunks_texts:
+        for _pos, prefix, verb, suffix in _extract_modal_anchors(text):
+            chunks_anchors.append((prefix, verb, suffix))
+
+    if not chunks_anchors:
+        return answer, 0
+
+    # 2. 从 answer 提取量词锚点
+    answer_anchors = _extract_modal_anchors(answer)
+
+    # 3. 对每个 answer anchor，找 chunks 中最匹配的
+    corrections: list[tuple[int, str, str]] = []  # (pos, old_verb, new_verb)
+    for a_pos, a_prefix, a_verb, a_suffix in answer_anchors:
+        best_match = 0
+        best_chunk_verb: str | None = None
+        for c_prefix, c_verb, c_suffix in chunks_anchors:
+            pref_match = _match_chars_tail(a_prefix, c_prefix)
+            suff_match = _match_chars_head(a_suffix, c_suffix)
+            total_match = pref_match + suff_match
+            if total_match < min_match_chars or total_match <= best_match:
+                continue
+            # W6 D4 保守：方向词不一致 → 跳过这个匹配（避免"宜小于"荒谬词）
+            if (a_suffix and c_suffix
+                    and a_suffix[0] in _DIRECTION_CHARS
+                    and c_suffix[0] in _DIRECTION_CHARS
+                    and a_suffix[0] != c_suffix[0]):
+                continue
+            best_match = total_match
+            best_chunk_verb = c_verb
+
+        if best_chunk_verb and best_chunk_verb != a_verb:
+            corrections.append((a_pos, a_verb, best_chunk_verb))
+
+    if not corrections:
+        return answer, 0
+
+    # 4. 按位置倒序替换（避免位置偏移）
+    aligned = answer
+    for pos, old_verb, new_verb in sorted(corrections, key=lambda x: -x[0]):
+        # 防御：验证 pos 处确实是 old_verb（万一被前面的替换扰乱）
+        if aligned[pos:pos + len(old_verb)] == old_verb:
+            aligned = aligned[:pos] + new_verb + aligned[pos + len(old_verb):]
+
+    return aligned, len(corrections)
+
+
+def detect_modal_verb_diffs(
+    answer: str,
+    chunks_texts: list[str],
+    *,
+    min_match_chars: int = 5,
+) -> list[dict]:
+    """检测（但不修改）answer vs chunks 的量词差异。用于 metadata 警告。
+
+    Returns:
+        list of {pos, answer_verb, chunks_verb, context} dicts
+    """
+    if not answer or not chunks_texts:
+        return []
+    chunks_anchors: list[tuple[str, str, str]] = []
+    for text in chunks_texts:
+        for _pos, prefix, verb, suffix in _extract_modal_anchors(text):
+            chunks_anchors.append((prefix, verb, suffix))
+
+    diffs: list[dict] = []
+    for a_pos, a_prefix, a_verb, a_suffix in _extract_modal_anchors(answer):
+        best_match = 0
+        best_chunk_verb: str | None = None
+        for c_prefix, c_verb, c_suffix in chunks_anchors:
+            t = _match_chars_tail(a_prefix, c_prefix) + _match_chars_head(a_suffix, c_suffix)
+            if t >= min_match_chars and t > best_match:
+                best_match = t
+                best_chunk_verb = c_verb
+        if best_chunk_verb and best_chunk_verb != a_verb:
+            diffs.append({
+                "pos": a_pos,
+                "answer_verb": a_verb,
+                "chunks_verb": best_chunk_verb,
+                "context": (a_prefix + a_verb + a_suffix)[:40],
+            })
+    return diffs

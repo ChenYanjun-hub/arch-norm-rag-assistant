@@ -25,13 +25,15 @@ export interface DoneMeta {
   tokens_out: number
 }
 
-/** W5 D4 + W6 D2：pipeline 元数据（dangling 监控 + post_filter 状态） */
+/** W5 D4 + W6 D2 + W6 D4：pipeline 元数据（dangling + post_filter + modal align） */
 export interface PipelineMeta {
   dangling_count: number
   n_citations_in_answer: number
   n_chunks_available: number
   post_filter_stripped_chars?: number
   post_filter_applied?: boolean
+  /** W6 D4：量词对齐校正次数（"宜/应/不应"被改回 chunks 原词的次数）*/
+  modal_verb_corrections?: number
 }
 
 /** SSE 事件类型 */

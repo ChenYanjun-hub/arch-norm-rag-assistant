@@ -163,6 +163,7 @@ export function ChatPage() {
         citations={citations}
         activeIndex={activeCite}
         onActiveChange={setActiveCite}
+        meta={lastAssistant?.meta}
       />
     </div>
   )
