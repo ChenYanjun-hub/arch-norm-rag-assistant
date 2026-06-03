@@ -15,7 +15,8 @@ const API_BASE = '' // 走 Vite proxy，前端只用相对路径
 function parseFrame(frame: string): SSEEvent | null {
   let eventType = 'message'
   let dataLine = ''
-  for (const line of frame.split('\n')) {
+  // sse-starlette 行尾用 CRLF；用 /\r?\n/ 兼容 LF/CRLF
+  for (const line of frame.split(/\r?\n/)) {
     if (line.startsWith('event:')) {
       eventType = line.slice(6).trim()
     } else if (line.startsWith('data:')) {
@@ -69,11 +70,25 @@ export async function* streamChat(
       if (done) break
       buffer += decoder.decode(value, { stream: true })
 
-      // SSE 用空行（\n\n）分隔帧
-      let sepIdx: number
-      while ((sepIdx = buffer.indexOf('\n\n')) >= 0) {
+      // SSE 用空行分隔帧；sse-starlette 实际发 CRLF (\r\n\r\n)，
+      // 需要同时兼容 LF (\n\n)。否则 indexOf('\n\n') 永远找不到，
+      // 整个流的 token 帧都会被丢弃（W6 D5 修）。
+      while (true) {
+        const crlfIdx = buffer.indexOf('\r\n\r\n')
+        const lfIdx = buffer.indexOf('\n\n')
+        let sepIdx: number
+        let sepLen: number
+        if (crlfIdx >= 0 && (lfIdx < 0 || crlfIdx <= lfIdx)) {
+          sepIdx = crlfIdx
+          sepLen = 4
+        } else if (lfIdx >= 0) {
+          sepIdx = lfIdx
+          sepLen = 2
+        } else {
+          break
+        }
         const frame = buffer.slice(0, sepIdx)
-        buffer = buffer.slice(sepIdx + 2)
+        buffer = buffer.slice(sepIdx + sepLen)
         const evt = parseFrame(frame)
         if (evt) yield evt
       }

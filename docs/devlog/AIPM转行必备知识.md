@@ -2074,6 +2074,122 @@ Layer 4: _strip_strong_claims (W8+)    (治"强制性条文"标签编造)
 
 ---
 
+## 三十五、W6 D4 bonus 实战追加（项目史上最大隐藏 bug 揭穿）· 1 个新洞察（61）
+
+W6 D4 启动前后端做手动 demo，用户报告"前端不显示回答"。诊断过程：
+1. 后端 log 显示 RAG 正常处理 + 195 tokens 生成
+2. `curl /api/chat` 看到 SSE 流完整（event:token / data:"你" / event:fallback / event:done）
+3. 前端 console.log 显示**只收到 done 事件**，token 全丢
+4. **hex dump SSE 字节流：行尾是 `\r\n`（CRLF）不是 `\n`（LF）**
+
+**根因**：
+
+```typescript
+// frontend/src/lib/apiClient.ts (W2 起就在的 bug)
+while ((sepIdx = buffer.indexOf('\n\n')) >= 0) {  // ← 永远 -1
+  const frame = buffer.slice(0, sepIdx)
+  ...
+}
+```
+
+`sse-starlette` 实际发的帧分隔符是 `\r\n\r\n` (bytes: 13,10,13,10)。
+`indexOf('\n\n')` 找连续两个 `\n` (10,10)。但 `\r\n\r\n` 两个 `\n` 之间有个 `\r`，
+**`indexOf('\n\n')` 永远找不到** → while loop 不执行 → token 帧全丢。
+
+为什么"现行有效"能显示？fetch 结束 finally 之前有 `if (buffer.trim()) parseFrame(buffer)`
+兜底处理 buffer 残留，能 parse **最后一帧 (done)**，所以 done 偶尔到达。但 token /
+fallback / metadata / revised_answer 全丢。
+
+修复：`indexOf('\r\n\r\n')` 优先匹配，回退到 `\n\n`。`split(/\r?\n/)` 兼容行尾。
+
+### 启示 61 · 端到端集成测试缺位让 SSE bug 活了 5 周 ⭐⭐
+
+这个 bug **从 W2 第一天 SSE 实现就存在**，活了 5 周直到 W6 D4 才被发现。
+
+**为什么没人发现**：
+- W2-W6 RAG 评测全用 `quality_eval`（Python 直接调 pipeline，不走 HTTP/SSE）
+- 前端在 W2-W3 开发时可能用过，但答辩 deck / W5 D5 截图 / W6 D4 透明度小栏
+  都是基于"前端 work"的**默认假设**
+- 项目里**没有自动化的端到端 smoke test**（无 Playwright / curl + parse 校验）
+
+**等价表述**：
+- 评测覆盖率高 ≠ 系统可用 — 评测和真实流可能完全脱节
+- **HTTP/SSE 这种"协议层" bug** 不在任何单元测试 / 评测 / regression 视野内
+- 项目里有 quality_eval + run_regression + run_fallback_eval — **就是没有 e2e_smoke_test**
+
+### 启示对未来 AIPM 转行项目的实操建议
+
+```
+评测金字塔（从下到上）
+┌─────────────────────────────┐
+│ 5. 真实用户场景 demo (人工) │ ← W6 D4 才补上
+├─────────────────────────────┤
+│ 4. e2e_smoke_test (自动)    │ ← 缺位！应该补上（curl + jq + assert SSE 流）
+├─────────────────────────────┤
+│ 3. quality_eval / Judge     │ ← 已有
+├─────────────────────────────┤
+│ 2. run_regression (跨集)    │ ← 已有
+├─────────────────────────────┤
+│ 1. 单元测试 (post_filter)   │ ← 已有 29 个
+└─────────────────────────────┘
+```
+
+**Layer 4 是最容易被忽视但最便宜的层**：
+- 一个 bash 脚本 `curl /api/chat | grep "event: token" | wc -l` 验证 token 数 > 0
+- 5 分钟能写完，能挡住 99% 的"前端不接收" / "API 502" / "协议格式变更" 类 bug
+
+### 应用：W7+ 路线必须加 e2e_smoke_test
+
+```bash
+# backend/scripts/e2e_smoke.sh
+#!/bin/bash
+# 启动后端后跑一次完整流，validate SSE 协议格式 + 帧数 + 关键事件
+
+curl -s -N -X POST http://localhost:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"query":"居住区配套幼儿园的服务半径不应大于多少米？"}' \
+  > /tmp/smoke.txt
+
+# 校验
+n_token=$(grep -c "^event: token$" /tmp/smoke.txt)
+has_citations=$(grep -c "^event: citations$" /tmp/smoke.txt)
+has_done=$(grep -c "^event: done$" /tmp/smoke.txt)
+
+[[ $n_token -gt 50 ]] || { echo "❌ token 数 $n_token < 50"; exit 1; }
+[[ $has_citations -eq 1 ]] || { echo "❌ 缺 citations 事件"; exit 1; }
+[[ $has_done -eq 1 ]] || { echo "❌ 缺 done 事件"; exit 1; }
+
+echo "✅ e2e smoke 通过：token=$n_token citations=1 done=1"
+```
+
+W7+ 强制每次部署前跑。
+
+### v6.1 阶段新加速点
+
+```
+12. **W6 D4 bonus 揭穿 SSE CRLF bug — 端到端集成测试缺位**（启示 61）
+```
+
+### EDD 闭环升级（v6.1 加"e2e_smoke 层"）
+
+```
+1-14. 略
+15. ⭐ 评测金字塔 5 层不可少：单测 + 评测 + regression + e2e_smoke + 人工
+    ↓
+    缺 e2e_smoke 会让协议层 bug 活很久（W6 D4 实证：5 周）
+```
+
+---
+
+**反思人**：项目作者
+**版本**：v6.1 (2026-06-04 W6 D4 bonus)
+**对应阶段**：W6 D4 启动前后端 demo 揭穿 SSE CRLF bug（活了 5 周的隐藏 bug）
+**累计洞察**：**61 个**（v1 8 + v2 5 + v3 5 + v4 6 + v5 12 + v5.1 4 + v5.2 2 + v5.3 2 + v5.4 5 + v5.5 3 + v5.6 1 + v5.7 1 + v5.8 3 + v5.9 1 + v6.0 2 + v6.1 1）
+**新增方法论**：端到端集成测试缺位让协议层 bug 活很久（启示 61 · 评测金字塔 5 层完整版）
+**项目状态**：v1.1 · 前后端首次端到端 work · W7+ 必补 e2e_smoke 层
+
+---
+
 ## 旧版本号占位（v5.3）
 
 **版本**：v5.3 (2026-06-03)

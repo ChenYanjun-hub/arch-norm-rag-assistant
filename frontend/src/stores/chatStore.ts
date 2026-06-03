@@ -53,6 +53,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     try {
       for await (const evt of streamChat({ query: trimmed, ...opts })) {
+        // W6 D4 临时调试：把事件流打到 console（验证 SSE 接收）
+        // eslint-disable-next-line no-console
+        console.log('[SSE]', evt.type, typeof evt.data === 'string' ? evt.data : evt.data)
         switch (evt.type) {
           case 'retrieval':
             patch((m) => ({ ...m, retrieval: evt.data }))
