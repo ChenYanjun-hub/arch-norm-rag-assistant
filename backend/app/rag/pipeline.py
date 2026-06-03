@@ -269,17 +269,43 @@ def run_rag_sync(
     ]
 
     # 流式生成；done 事件之前补 citations
+    # W5 D4：边流边收 token，用于流末计算 dangling_count（防编造 [N] 监控）
     done_event: dict[str, Any] | None = None
+    answer_chunks: list[str] = []
     for evt in stream_chat_sync(messages):
         if evt["type"] == "done":
             done_event = evt
             break
+        if evt["type"] == "token":
+            answer_chunks.append(evt["data"])
         yield evt
+
+    # W5 D4：扫描完整 answer 的 [N]，N > len(kept_payloads) 视为 dangling（编造引用号）
+    full_answer = "".join(answer_chunks)
+    n_chunks = len(kept_payloads)
+    import re as _re
+    citation_refs = [int(m.group(1)) for m in _re.finditer(r'\[(\d+)\]', full_answer)]
+    dangling_refs = [n for n in citation_refs if n < 1 or n > n_chunks]
+    dangling_count = len(dangling_refs)
+    if dangling_count > 0:
+        logger.warning(
+            f"[pipeline] dangling_citations: {dangling_count} 个越界引用号 "
+            f"(refs={dangling_refs}, n_chunks={n_chunks})"
+        )
 
     # citations 在 done 之前下发，让前端可以"答案完→显示引用"
     yield {
         "type": "citations",
         "data": [_build_citation(p) for p in kept_payloads],
+    }
+    # W5 D4 新增：metadata 事件携带 dangling_count（不影响现有消费方，可选监听）
+    yield {
+        "type": "metadata",
+        "data": {
+            "dangling_count": dangling_count,
+            "n_citations_in_answer": len(citation_refs),
+            "n_chunks_available": n_chunks,
+        },
     }
     if done_event:
         yield done_event
