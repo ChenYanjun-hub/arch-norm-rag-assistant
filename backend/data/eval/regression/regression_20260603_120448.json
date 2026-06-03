@@ -1,0 +1,263 @@
+{
+  "csv": "eval_set_v1_150_v4_5.csv",
+  "combos_run": [
+    "A",
+    "B",
+    "C",
+    "D",
+    "E",
+    "F"
+  ],
+  "flip_threshold": 0.05,
+  "timestamp": "20260603_120448",
+  "new_results": {
+    "A": {
+      "path": "/Users/Zhuanz/Documents/项目开发/建景规规范问答助手/backend/data/eval/results/eval_v1_50_rerank_on_dedup_on_mq_on_hyb_on_ck20_pf-text_only_20260603_114602.json",
+      "csv": "eval_set_v1_150_v4_5.csv",
+      "mq": true,
+      "rk": true,
+      "hyb": true,
+      "ck": 20,
+      "pf": "text_only",
+      "hit5_strict": 0.7586206896551724,
+      "hit5_loose": 0.9310344827586207,
+      "mrr_strict": 0.6921319102353585,
+      "mrr_loose": 0.8642959770114942,
+      "elapsed_s": 473.0,
+      "n_eval": 116,
+      "ts": "20260603_114602",
+      "mtime": 1780458362.8031957
+    },
+    "B": {
+      "path": "/Users/Zhuanz/Documents/项目开发/建景规规范问答助手/backend/data/eval/results/eval_v1_50_rerank_on_dedup_on_mq_off_hyb_on_ck20_pf-text_only_20260603_115236.json",
+      "csv": "eval_set_v1_150_v4_5.csv",
+      "mq": false,
+      "rk": true,
+      "hyb": true,
+      "ck": 20,
+      "pf": "text_only",
+      "hit5_strict": 0.7672413793103449,
+      "hit5_loose": 0.9224137931034483,
+      "mrr_strict": 0.700944170771757,
+      "mrr_loose": 0.8643678160919541,
+      "elapsed_s": 392.0,
+      "n_eval": 116,
+      "ts": "20260603_115236",
+      "mtime": 1780458756.1598475
+    },
+    "C": {
+      "path": "/Users/Zhuanz/Documents/项目开发/建景规规范问答助手/backend/data/eval/results/eval_v1_50_rerank_off_dedup_on_mq_on_hyb_on_ck20_pf-text_only_20260603_115529.json",
+      "csv": "eval_set_v1_150_v4_5.csv",
+      "mq": true,
+      "rk": false,
+      "hyb": true,
+      "ck": 20,
+      "pf": "text_only",
+      "hit5_strict": 0.75,
+      "hit5_loose": 0.896551724137931,
+      "mrr_strict": 0.6348727422003284,
+      "mrr_loose": 0.8289032567049808,
+      "elapsed_s": 172.0,
+      "n_eval": 116,
+      "ts": "20260603_115529",
+      "mtime": 1780458929.6229262
+    },
+    "D": {
+      "path": "/Users/Zhuanz/Documents/项目开发/建景规规范问答助手/backend/data/eval/results/eval_v1_50_rerank_off_dedup_on_mq_off_hyb_on_ck20_pf-text_only_20260603_115547.json",
+      "csv": "eval_set_v1_150_v4_5.csv",
+      "mq": false,
+      "rk": false,
+      "hyb": true,
+      "ck": 20,
+      "pf": "text_only",
+      "hit5_strict": 0.7327586206896551,
+      "hit5_loose": 0.9051724137931034,
+      "mrr_strict": 0.6262554734537493,
+      "mrr_loose": 0.8197181171319103,
+      "elapsed_s": 16.0,
+      "n_eval": 116,
+      "ts": "20260603_115547",
+      "mtime": 1780458947.2666602
+    },
+    "E": {
+      "path": "/Users/Zhuanz/Documents/项目开发/建景规规范问答助手/backend/data/eval/results/eval_v1_50_rerank_on_dedup_on_mq_on_hyb_off_ck20_pf-text_only_20260603_120318.json",
+      "csv": "eval_set_v1_150_v4_5.csv",
+      "mq": true,
+      "rk": true,
+      "hyb": false,
+      "ck": 20,
+      "pf": "text_only",
+      "hit5_strict": 0.75,
+      "hit5_loose": 0.9310344827586207,
+      "mrr_strict": 0.6845888067870827,
+      "mrr_loose": 0.859995894909688,
+      "elapsed_s": 450.0,
+      "n_eval": 116,
+      "ts": "20260603_120318",
+      "mtime": 1780459398.268263
+    },
+    "F": {
+      "path": "/Users/Zhuanz/Documents/项目开发/建景规规范问答助手/backend/data/eval/results/eval_v1_50_rerank_off_dedup_on_mq_off_hyb_off_ck20_pf-text_only_20260603_120447.json",
+      "csv": "eval_set_v1_150_v4_5.csv",
+      "mq": false,
+      "rk": false,
+      "hyb": false,
+      "ck": 20,
+      "pf": "text_only",
+      "hit5_strict": 0.7413793103448276,
+      "hit5_loose": 0.8793103448275862,
+      "mrr_strict": 0.6340859332238642,
+      "mrr_loose": 0.8408490695128625,
+      "elapsed_s": 88.0,
+      "n_eval": 116,
+      "ts": "20260603_120447",
+      "mtime": 1780459487.6465018
+    }
+  },
+  "diffs": [
+    {
+      "combo": "A",
+      "new_csv": "eval_set_v1_150_v4_5.csv",
+      "old_csv": "eval_set_v1_50_v2.csv",
+      "delta_strict": 0.7323049001814882,
+      "delta_loose": 0.43103448275862066,
+      "flipped": true,
+      "note": "loose 跨集上升 +43.1pp（评测集变可信）"
+    },
+    {
+      "combo": "A",
+      "new_csv": "eval_set_v1_150_v4_5.csv",
+      "old_csv": "eval_set_v1_50_v3.csv",
+      "delta_strict": 0.5973303670745272,
+      "delta_loose": 0.1245828698553949,
+      "flipped": true,
+      "note": "loose 跨集上升 +12.5pp（评测集变可信）"
+    },
+    {
+      "combo": "A",
+      "new_csv": "eval_set_v1_150_v4_5.csv",
+      "old_csv": "eval_set_v1_50_v3_1.csv",
+      "delta_strict": 0.43604004449388206,
+      "delta_loose": 0.1245828698553949,
+      "flipped": true,
+      "note": "loose 跨集上升 +12.5pp（评测集变可信）"
+    },
+    {
+      "combo": "A",
+      "new_csv": "eval_set_v1_150_v4_5.csv",
+      "old_csv": "eval_set_v1_100_v4.csv",
+      "delta_strict": 0.10997204100652369,
+      "delta_loose": 0.03914259086672878,
+      "flipped": true,
+      "note": "strict 跨集变化 +11.0pp"
+    },
+    {
+      "combo": "B",
+      "new_csv": "eval_set_v1_150_v4_5.csv",
+      "old_csv": "eval_set_v1_50_v3_1.csv",
+      "delta_strict": 0.44466073414905455,
+      "delta_loose": 0.11596218020022253,
+      "flipped": true,
+      "note": "loose 跨集上升 +11.6pp（评测集变可信）"
+    },
+    {
+      "combo": "B",
+      "new_csv": "eval_set_v1_150_v4_5.csv",
+      "old_csv": "eval_set_v1_100_v4.csv",
+      "delta_strict": 0.10507921714818269,
+      "delta_loose": 0.0305219012115564,
+      "flipped": true,
+      "note": "strict 跨集变化 +10.5pp"
+    },
+    {
+      "combo": "C",
+      "new_csv": "eval_set_v1_150_v4_5.csv",
+      "old_csv": "eval_set_v1_50_v3_1.csv",
+      "delta_strict": 0.3951612903225806,
+      "delta_loose": 0.1546162402669633,
+      "flipped": true,
+      "note": "loose 跨集上升 +15.5pp（评测集变可信）"
+    },
+    {
+      "combo": "C",
+      "new_csv": "eval_set_v1_150_v4_5.csv",
+      "old_csv": "eval_set_v1_100_v4.csv",
+      "delta_strict": 0.10135135135135132,
+      "delta_loose": 0.045200372786579734,
+      "flipped": true,
+      "note": "strict 跨集变化 +10.1pp"
+    },
+    {
+      "combo": "D",
+      "new_csv": "eval_set_v1_150_v4_5.csv",
+      "old_csv": "eval_set_v1_50_v3_1.csv",
+      "delta_strict": 0.44243604004449383,
+      "delta_loose": 0.16323692992213568,
+      "flipped": true,
+      "note": "loose 跨集上升 +16.3pp（评测集变可信）"
+    },
+    {
+      "combo": "D",
+      "new_csv": "eval_set_v1_150_v4_5.csv",
+      "old_csv": "eval_set_v1_100_v4.csv",
+      "delta_strict": 0.09762348555452005,
+      "delta_loose": 0.026794035414725026,
+      "flipped": true,
+      "note": "strict 跨集变化 +9.8pp"
+    },
+    {
+      "combo": "E",
+      "new_csv": "eval_set_v1_150_v4_5.csv",
+      "old_csv": "eval_set_v1_50_v2.csv",
+      "delta_strict": 0.7236842105263158,
+      "delta_loose": 0.43103448275862066,
+      "flipped": true,
+      "note": "loose 跨集上升 +43.1pp（评测集变可信）"
+    },
+    {
+      "combo": "E",
+      "new_csv": "eval_set_v1_150_v4_5.csv",
+      "old_csv": "eval_set_v1_50_v3_1.csv",
+      "delta_strict": 0.4274193548387097,
+      "delta_loose": 0.09232480533926579,
+      "flipped": true,
+      "note": "loose 跨集上升 +9.2pp（评测集变可信）"
+    },
+    {
+      "combo": "E",
+      "new_csv": "eval_set_v1_150_v4_5.csv",
+      "old_csv": "eval_set_v1_100_v4.csv",
+      "delta_strict": 0.10135135135135132,
+      "delta_loose": 0.02562907735321529,
+      "flipped": true,
+      "note": "strict 跨集变化 +10.1pp"
+    },
+    {
+      "combo": "F",
+      "new_csv": "eval_set_v1_150_v4_5.csv",
+      "old_csv": "eval_set_v1_50_v2.csv",
+      "delta_strict": 0.7150635208711434,
+      "delta_loose": 0.4319419237749546,
+      "flipped": true,
+      "note": "loose 跨集上升 +43.2pp（评测集变可信）"
+    },
+    {
+      "combo": "F",
+      "new_csv": "eval_set_v1_150_v4_5.csv",
+      "old_csv": "eval_set_v1_50_v3_1.csv",
+      "delta_strict": 0.4187986651835373,
+      "delta_loose": 0.16963292547274744,
+      "flipped": true,
+      "note": "loose 跨集上升 +17.0pp（评测集变可信）"
+    },
+    {
+      "combo": "F",
+      "new_csv": "eval_set_v1_150_v4_5.csv",
+      "old_csv": "eval_set_v1_100_v4.csv",
+      "delta_strict": 0.09273066169617894,
+      "delta_loose": 0.027958993476234872,
+      "flipped": true,
+      "note": "strict 跨集变化 +9.3pp"
+    }
+  ]
+}
