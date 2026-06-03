@@ -151,7 +151,10 @@ def _run_pipeline(query: str) -> tuple[str, list[dict[str, Any]]]:
 
 
 def _judge(query: str, answer: str, chunks: list[dict[str, Any]]) -> dict[str, Any]:
-    """调 DeepSeek 评 4 维度。返回 dict 或 {"error": ...}。"""
+    """调 DeepSeek 评 4 维度。返回 dict 或 {"error": ...}。
+
+    W5 D5：加 1 次重试机制（应对 DeepSeek 偶发 Connection error）。
+    """
     from openai import APIError
     from app.rag.generator import get_client
     from app.core.config import settings
@@ -161,30 +164,38 @@ def _judge(query: str, answer: str, chunks: list[dict[str, Any]]) -> dict[str, A
         for i, c in enumerate(chunks[:3])
     ) or "（无 chunks）"
 
-    try:
-        client = get_client()
-        resp = client.chat.completions.create(
-            model=settings.deepseek_model,
-            messages=[
-                {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
-                {"role": "user", "content": JUDGE_USER_TEMPLATE.format(
-                    query=query, answer=answer[:500], chunks=chunks_str)},
-            ],
-            temperature=0.1,
-            max_tokens=200,
-            timeout=20,
-        )
-        content = resp.choices[0].message.content or ""
-        # 抓 JSON
-        import re
-        m = re.search(r'\{[^{}]*\}', content, re.DOTALL)
-        if m:
-            return json.loads(m.group(0))
-        return {"error": f"no_json: {content[:100]}"}
-    except APIError as e:
-        return {"error": f"api: {e}"}
-    except Exception as e:
-        return {"error": f"unknown: {e}"}
+    messages = [
+        {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
+        {"role": "user", "content": JUDGE_USER_TEMPLATE.format(
+            query=query, answer=answer[:500], chunks=chunks_str)},
+    ]
+
+    last_err: str = ""
+    # W5 D5：尝试 2 次（1 次重试），避免单次 API 抖动污染评测
+    for attempt in (1, 2):
+        try:
+            client = get_client()
+            resp = client.chat.completions.create(
+                model=settings.deepseek_model,
+                messages=messages,
+                temperature=0.1,
+                max_tokens=200,
+                timeout=20,
+            )
+            content = resp.choices[0].message.content or ""
+            import re
+            m = re.search(r'\{[^{}]*\}', content, re.DOTALL)
+            if m:
+                return json.loads(m.group(0))
+            last_err = f"no_json: {content[:100]}"
+        except APIError as e:
+            last_err = f"api: {e}"
+        except Exception as e:
+            last_err = f"unknown: {e}"
+        if attempt == 1:
+            logger.info(f"[judge] attempt 1 failed: {last_err[:60]}, retrying...")
+            time.sleep(1.5)  # 短暂退避
+    return {"error": last_err}
 
 
 # ── 主流程 ──────────────────────────────────────────────
@@ -230,6 +241,7 @@ def main() -> None:
         return bool(e and a and (e in a or a in e))
 
     results: list[QualityResult] = []
+    skipped: list[dict[str, str]] = []  # W5 D5：跳过条目（API err 等）
     for i, row in enumerate(rows, 1):
         qid = row["id"]
         query = row["query"]
@@ -242,6 +254,8 @@ def main() -> None:
             answer, citations = _run_pipeline(query)
         except Exception as e:
             logger.error(f"[{qid}] pipeline failed: {e}")
+            skipped.append({"qid": qid, "reason": f"pipeline_failed: {str(e)[:60]}"})
+            print(f"  [{i:3d}/{len(rows)}] {qid} | ⚠️ SKIP pipeline_failed: {str(e)[:40]}")
             continue
 
         # 自动评 dim1 (hit@5 loose) + dim2 (hit@5 strict)
@@ -254,18 +268,21 @@ def main() -> None:
                     hit_strict = True
                     break
 
-        # 调 LLM Judge
+        # 调 LLM Judge（含 1 次重试）
         judge_result = _judge(query, answer, citations)
+        # W5 D5：Judge API err 跳过该条不计入分母（避免污染均值 + 误触发 veto）
         if "error" in judge_result:
-            logger.warning(f"[{qid}] judge failed: {judge_result['error']}")
-            d3 = d4 = d5 = d7 = 0
-            notes = f"judge_error: {judge_result['error'][:50]}"
-        else:
-            d3 = int(judge_result.get("dim3_citation", 0))
-            d4 = int(judge_result.get("dim4_wording", 0))
-            d5 = int(judge_result.get("dim5_numeric", 0))
-            d7 = int(judge_result.get("dim7_no_halluc", 0))
-            notes = judge_result.get("notes", "")[:50]
+            err_msg = judge_result["error"][:80]
+            logger.warning(f"[{qid}] judge failed after retry: {err_msg}")
+            skipped.append({"qid": qid, "reason": f"judge_error: {err_msg}"})
+            print(f"  [{i:3d}/{len(rows)}] {qid} | ⚠️ SKIP judge_error: {err_msg[:40]}")
+            continue
+
+        d3 = int(judge_result.get("dim3_citation", 0))
+        d4 = int(judge_result.get("dim4_wording", 0))
+        d5 = int(judge_result.get("dim5_numeric", 0))
+        d7 = int(judge_result.get("dim7_no_halluc", 0))
+        notes = judge_result.get("notes", "")[:50]
 
         # 综合得分
         composite = (
@@ -305,6 +322,8 @@ def main() -> None:
 
     # ── 聚合 ──
     n = len(results)
+    n_attempted = len(rows)
+    n_skipped = len(skipped)
     if n == 0:
         print("\n❌ 没有有效结果")
         sys.exit(1)
@@ -313,7 +332,7 @@ def main() -> None:
     avg_composite = sum(r.composite for r in results) / n
     n_veto = sum(1 for r in results if r.veto_triggered)
 
-    print(f"\n📈 7 维度聚合（n={n}）：")
+    print(f"\n📈 7 维度聚合（n_attempted={n_attempted}, n_eval={n}, n_skipped={n_skipped}）：")
     print(f"  dim1 检索召回 (loose) : {avg('dim1_recall'):.1%}")
     print(f"  dim2 精确条款 (strict): {avg('dim2_precision'):.1%}")
     print(f"  dim3 引用准确         : {avg('dim3_citation'):.1%}")
@@ -324,6 +343,12 @@ def main() -> None:
     print()
     print(f"  📊 综合得分（加权）     : {avg_composite*100:.1f} / 100")
     print(f"  💀 一票否决触发条数    : {n_veto} / {n}")
+    if n_skipped > 0:
+        print(f"  ⚠️  跳过条数（Judge / Pipeline 错误）: {n_skipped} / {n_attempted}")
+        for s in skipped[:5]:
+            print(f"     · {s['qid']}: {s['reason'][:60]}")
+        if len(skipped) > 5:
+            print(f"     · ... 等 {len(skipped) - 5} 条")
     print()
 
     if avg_composite >= 0.75 and n_veto == 0:
@@ -341,7 +366,10 @@ def main() -> None:
 
     json_path.write_text(json.dumps({
         "csv": args.csv.name,
+        "n_attempted": n_attempted,
         "n_eval": n,
+        "n_skipped": n_skipped,
+        "skipped": skipped,
         "weights": WEIGHTS,
         "overall": {
             "composite": avg_composite,

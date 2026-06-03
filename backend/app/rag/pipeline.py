@@ -280,11 +280,12 @@ def run_rag_sync(
             answer_chunks.append(evt["data"])
         yield evt
 
-    # W5 D4：扫描完整 answer 的 [N]，N > len(kept_payloads) 视为 dangling（编造引用号）
+    # W5 D4/D5：扫描完整 answer 的 [N]，N > len(kept_payloads) 视为 dangling（编造引用号）
+    # D5 修订：regex 收紧为 \[(\d{1,2})\] —— 仅匹配 1-2 位脚标号，避免误匹配 [2010] 这种年号
     full_answer = "".join(answer_chunks)
     n_chunks = len(kept_payloads)
     import re as _re
-    citation_refs = [int(m.group(1)) for m in _re.finditer(r'\[(\d+)\]', full_answer)]
+    citation_refs = [int(m.group(1)) for m in _re.finditer(r'\[(\d{1,2})\]', full_answer)]
     dangling_refs = [n for n in citation_refs if n < 1 or n > n_chunks]
     dangling_count = len(dangling_refs)
     if dangling_count > 0:
