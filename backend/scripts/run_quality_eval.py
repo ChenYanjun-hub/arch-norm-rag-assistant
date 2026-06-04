@@ -51,26 +51,53 @@ DEFAULT_CSV = _BACKEND / "data" / "eval" / "eval_set_v1_150_v4_5.csv"
 QUALITY_DIR = _BACKEND / "data" / "eval" / "quality"
 
 
-# ── LLM Judge Prompt（4 个维度合一，一次调用打 4 分）────────
+# ── LLM Judge Prompt v2（W7 D2 启示 48 落地：防 Judge 自身 hallucinate）────────
+# 改动 vs v1：
+#   1. 加 4 条"自我警惕"约束（防凭印象造错字 / 不确定时避险给 1 分）
+#   2. chunks 数 3 → 5 条
+#   3. chunks 截断 200 → 500 字
+#   4. 输出格式加 confidence 字段（hi/mid/lo）便于后续 calibration
 JUDGE_SYSTEM_PROMPT = """你是规范知识问答系统的质量评审员。
 给定 1) 用户 query  2) RAG 系统的回答  3) 系统检索到的 chunks，
-你要从 4 个维度独立打分（每项 0 或 1）：
+你要从 4 个维度独立打分（每项 0 或 1）。
+
+⚠️ **Judge 自我警惕约束（避免你自己 hallucinate）**：
+
+1. **判 dim4 用词时，只能引用 chunks 实际出现的字符串**。不要凭印象判错字。
+   如果 chunks 用的就是"游憩"，不要说"原文是'游患'被改为'游憩'" — 这是你自己造错字。
+   每次判 dim4=0 前，**必须在脑中明确指出 chunks 里的原词 vs answer 里的当前词**，
+   两者必须真实可见才能扣分。
+
+2. **chunks 截断 500 字仍可能不全**：如果你怀疑 dim7 编造但 chunks 末尾是 "..."，
+   说明 chunks 被截了；这种情况**给 1 分避险**，notes 注明 "chunks 截断不全"。
+
+3. **dim4 只判量词**（应/不应/宜/不宜/可/不可/严禁/必须/不得），
+   **不判业务逻辑错误**（如"280m 符合 300m 下限"逻辑错应归 dim7 而非 dim4）。
+
+4. **数字 dim5**：单位前后空格不计错（"3.0m²/人" 跟 "3.0 m²/人" 视为一致）；
+   只判数值或单位（如 "m" vs "m²"）的实际差异。
+
+5. **不确定时给 1 分（避险）**，并在 notes 注明"不确定"。
+   宁可漏判 false negative，也不要造 false positive。
 
 【维度 3 · 引用准确】Citation Accuracy
 - 1 分：回答中所有引用的规范名/标准号/条文号都来自检索到的 chunks
-- 0 分：存在引用规范号或条文号是 chunks 中没有的（编造引用）
+- 0 分：存在引用规范号或条文号是 chunks 中**确实没有**的（不要靠记忆，对照 chunks 实际文本）
 
 【维度 4 · 原文用词】Original Wording ★ 一票否决
-- 1 分："应/不应/宜/不宜/可/不可/严禁/必须"等用词与 chunks 原文完全一致
-- 0 分：把"宜"翻译成"应"，"建议"翻译成"必须"，或类似改动
+- 1 分："应/不应/宜/不宜/可/不可/严禁/必须/不得" 等量词与 chunks 原文一致
+- 0 分：量词真有差异（你必须能从 chunks 引出原词 + 从 answer 引出错词）
+- **只判量词，不判其他词的差异**
 
 【维度 5 · 数字精确】Numerical Accuracy ★ 一票否决
-- 1 分：回答中数字（如 300m、1.5m、30% 等）与 chunks 原文完全一致
-- 0 分：数字与原文不符（哪怕 1 位差异）
+- 1 分：回答中所有数字（300m / 1.5m² / 35% 等）与 chunks 原文一致
+- 0 分：数字本身或单位真有差异（如 "3.0m" vs "3.0m²" 缺平方）
+- **空格差异不算错**（"3.0m" = "3.0 m"）
 
 【维度 7 · 不编造】No Hallucination ★ 一票否决
 - 1 分：回答内容全部来自 chunks，无 chunks 之外的"经验补充"
-- 0 分：回答包含 chunks 中没有的内容（即使内容看起来合理）
+- 0 分：回答**明确包含**chunks 之外的事实陈述（不是修辞性表达，是具体规范信息）
+- **chunks 截断不全时（"..."结尾）默认给 1 分避险**
 
 输出格式（严格 JSON，无其他文本）：
 {
@@ -78,7 +105,8 @@ JUDGE_SYSTEM_PROMPT = """你是规范知识问答系统的质量评审员。
   "dim4_wording":    0 或 1,
   "dim5_numeric":    0 或 1,
   "dim7_no_halluc":  0 或 1,
-  "notes":           "30 字内说明哪个维度扣分原因（如无扣分写'4 维全过'）"
+  "confidence":      "hi" | "mid" | "lo",
+  "notes":           "30 字内说明哪个维度扣分原因 + chunks 原词引用（如 'dim4=0 chunks用宜 answer用应'）；如无扣分写'4 维全过'"
 }
 """
 
@@ -88,7 +116,7 @@ JUDGE_USER_TEMPLATE = """【用户 query】
 【RAG 回答】
 {answer}
 
-【检索到的 chunks（截取前 3 条）】
+【检索到的 chunks（前 5 条，每条最多 500 字）】
 {chunks}
 """
 
@@ -168,9 +196,10 @@ def _judge(query: str, answer: str, chunks: list[dict[str, Any]]) -> dict[str, A
     from app.rag.generator import get_client
     from app.core.config import settings
 
+    # W7 D2 Judge v2：chunks 3→5 条，截断 200→500 字（启示 48 落地）
     chunks_str = "\n\n".join(
-        f"[{i+1}] {c.get('spec_name','')} {c.get('spec_code','')} {c.get('clause','')}\n{c.get('original_text','')[:200]}"
-        for i, c in enumerate(chunks[:3])
+        f"[{i+1}] {c.get('spec_name','')} {c.get('spec_code','')} {c.get('clause','')}\n{c.get('original_text','')[:500]}"
+        for i, c in enumerate(chunks[:5])
     ) or "（无 chunks）"
 
     messages = [
@@ -291,7 +320,10 @@ def main() -> None:
         d4 = int(judge_result.get("dim4_wording", 0))
         d5 = int(judge_result.get("dim5_numeric", 0))
         d7 = int(judge_result.get("dim7_no_halluc", 0))
-        notes = judge_result.get("notes", "")[:50]
+        # W7 D2：confidence 字段（Judge v2 新增），用于后续 calibration 分析
+        confidence = judge_result.get("confidence", "mid")  # hi/mid/lo
+        notes_raw = judge_result.get("notes", "")[:50]
+        notes = f"[{confidence}] {notes_raw}" if confidence != "mid" else notes_raw
 
         # 综合得分
         composite = (
