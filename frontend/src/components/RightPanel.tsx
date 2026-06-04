@@ -112,6 +112,15 @@ export function RightPanel({ citations, activeIndex, onActiveChange, meta }: Pro
             >
               ✎ {meta.modal_verb_corrections ?? 0}
             </span>
+            <span
+              style={{
+                color:
+                  (meta.number_corrections ?? 0) > 0 ? '#8e24aa' : 'var(--ink-faint)',
+              }}
+              title={`align_numbers 数字校正: ${meta.number_corrections ?? 0} 处（W7 D1 治理 dim5 数字精确）`}
+            >
+              ⌗ {meta.number_corrections ?? 0}
+            </span>
           </div>
         )}
       </div>

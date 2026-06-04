@@ -250,6 +250,161 @@ def align_modal_verbs(
     return aligned, len(corrections)
 
 
+# ──────────────────────────────────────────────
+# W7 D1 · 数字对齐（后处理矩阵第 3 层 · 治 dim5 数字精确）
+# ──────────────────────────────────────────────
+#
+# 背景：W6 D4 align_modal_verbs 已治 dim4 用词错（启示 60 后处理矩阵）。
+# 启示 60 预测：后处理可叠加 — 第 3 层治 dim5 数字精确。
+#
+# 算法：跟 align_modal_verbs 同样的 Anchor-Match：
+#   1. 从 chunks 提取所有 "数字+单位" token（如 "300m" / "1.5m²" / "35%"）
+#   2. 从 answer 同样提取
+#   3. anchor 匹配（prefix tail + suffix head ≥ min_match_chars）
+#   4. 数字不一致 → 改回 chunks 原数字
+#
+# 保守策略：
+#   - 数字+单位作为整体 token（"300m" 不会拆成 "300" 和 "m"）
+#   - 单位不一致也视为不一致（如 "3.0m" vs "3.0m²" 缺平方）
+#   - 方向词 guard：chunks 在数字前是"大于"，answer 是"小于" → 跳过
+#     （避免改成 "小于 300"但语义跟原文相反）
+#   - 范围数字 "300m~500m" 在 regex 内会拆成两个独立 anchor，各自匹配
+
+# 数字 + 单位 token 模式
+# 单位：m / cm / mm / km / hm / m² / m³ / hm² / % / ° / 度 / 人 / 套 / 班 / 户 / 床 / kg / t / 级
+_NUMBER_PATTERN = re.compile(
+    r"(\d+(?:\.\d+)?)"              # 数字（整数或小数）
+    r"\s*"                            # 可选空格
+    r"(?:m[²³]?|cm|mm|km|hm[²³]?|%|°|度|人|套|班|户|床|kg|t|级)?"  # 可选单位
+)
+
+# 方向词集合（数字前出现）— 用于 anchor 反向匹配防误改
+_NUMBER_DIRECTION_CHARS = {"大", "小", "高", "低", "多", "少", "长", "短", "等"}
+
+
+def _extract_number_anchors(text: str, ctx_len: int = 8) -> list[tuple[int, str, str, str]]:
+    """从 text 提取所有数字 anchor：(pos, prefix, number_with_unit, suffix)。
+
+    number_with_unit 是 "300m" / "1.5%" / "35%" 这种整体 token，
+    保留原文空格状态（normalize 留给上层）。
+    """
+    anchors: list[tuple[int, str, str, str]] = []
+    for m in _NUMBER_PATTERN.finditer(text):
+        token = m.group(0).strip()
+        if not token or not any(c.isdigit() for c in token):
+            continue
+        pos = m.start()
+        prefix = text[max(0, pos - ctx_len):pos]
+        suffix = text[pos + len(m.group(0)):pos + len(m.group(0)) + ctx_len]
+        anchors.append((pos, prefix, token, suffix))
+    return anchors
+
+
+def align_numbers(
+    answer: str,
+    chunks_texts: list[str],
+    *,
+    min_match_chars: int = 5,
+) -> tuple[str, int]:
+    """W7 D1：自动校正 answer 中的数字使其与 chunks 一致。
+
+    保守策略：
+    - 数字+单位整体作为 token（"3.0m" vs "3.0m²" 算不一致）
+    - 方向词 guard：prefix 末字含方向词且不一致时跳过
+    - min_match_chars=5：保证只改"同一句话"里的数字
+
+    Args:
+        answer: LLM 输出（建议是 align_modal_verbs 之后的 aligned_answer）
+        chunks_texts: 检索到的 chunks 原文
+        min_match_chars: prefix + suffix 至少匹配多少字
+
+    Returns:
+        (aligned_answer, n_corrections)
+    """
+    if not answer or not chunks_texts:
+        return answer, 0
+
+    chunks_anchors: list[tuple[str, str, str]] = []
+    for text in chunks_texts:
+        for _pos, prefix, num, suffix in _extract_number_anchors(text):
+            chunks_anchors.append((prefix, num, suffix))
+
+    if not chunks_anchors:
+        return answer, 0
+
+    answer_anchors = _extract_number_anchors(answer)
+    corrections: list[tuple[int, str, str]] = []  # (pos, old_token, new_token)
+
+    for a_pos, a_prefix, a_num, a_suffix in answer_anchors:
+        best_match = 0
+        best_chunk_num: str | None = None
+        for c_prefix, c_num, c_suffix in chunks_anchors:
+            # 完全相等的不算（不需要改）
+            if c_num.replace(" ", "") == a_num.replace(" ", ""):
+                continue
+            pref_match = _match_chars_tail(a_prefix, c_prefix)
+            suff_match = _match_chars_head(a_suffix, c_suffix)
+            total_match = pref_match + suff_match
+            if total_match < min_match_chars or total_match <= best_match:
+                continue
+            # 方向词 guard：prefix 末字含方向词不一致时跳过
+            # (chunks "大于 300m"，answer "小于 300m" 不该改成 "大于 300m" 因为语义反)
+            if (a_prefix and c_prefix
+                    and a_prefix[-1] in _NUMBER_DIRECTION_CHARS
+                    and c_prefix[-1] in _NUMBER_DIRECTION_CHARS
+                    and a_prefix[-1] != c_prefix[-1]):
+                continue
+            best_match = total_match
+            best_chunk_num = c_num
+
+        if best_chunk_num and best_chunk_num != a_num:
+            corrections.append((a_pos, a_num, best_chunk_num))
+
+    if not corrections:
+        return answer, 0
+
+    aligned = answer
+    for pos, old_token, new_token in sorted(corrections, key=lambda x: -x[0]):
+        if aligned[pos:pos + len(old_token)] == old_token:
+            aligned = aligned[:pos] + new_token + aligned[pos + len(old_token):]
+
+    return aligned, len(corrections)
+
+
+def detect_number_diffs(
+    answer: str,
+    chunks_texts: list[str],
+    *,
+    min_match_chars: int = 5,
+) -> list[dict]:
+    """检测但不修改 — 返回 answer vs chunks 的数字差异。"""
+    if not answer or not chunks_texts:
+        return []
+    chunks_anchors: list[tuple[str, str, str]] = []
+    for text in chunks_texts:
+        for _pos, prefix, num, suffix in _extract_number_anchors(text):
+            chunks_anchors.append((prefix, num, suffix))
+    diffs: list[dict] = []
+    for a_pos, a_prefix, a_num, a_suffix in _extract_number_anchors(answer):
+        best_match = 0
+        best_chunk_num: str | None = None
+        for c_prefix, c_num, c_suffix in chunks_anchors:
+            if c_num.replace(" ", "") == a_num.replace(" ", ""):
+                continue
+            t = _match_chars_tail(a_prefix, c_prefix) + _match_chars_head(a_suffix, c_suffix)
+            if t >= min_match_chars and t > best_match:
+                best_match = t
+                best_chunk_num = c_num
+        if best_chunk_num and best_chunk_num != a_num:
+            diffs.append({
+                "pos": a_pos,
+                "answer_number": a_num,
+                "chunks_number": best_chunk_num,
+                "context": (a_prefix + a_num + a_suffix)[:40],
+            })
+    return diffs
+
+
 def detect_modal_verb_diffs(
     answer: str,
     chunks_texts: list[str],

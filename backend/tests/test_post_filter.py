@@ -27,7 +27,9 @@ if str(_BACKEND) not in sys.path:
 
 from app.rag.post_filter import (
     align_modal_verbs,
+    align_numbers,
     detect_modal_verb_diffs,
+    detect_number_diffs,
     detect_supplementary_sections,
     strip_supplementary_sections,
 )
@@ -378,6 +380,138 @@ class TestDetectModalVerbDiffs(unittest.TestCase):
         answer = "服务半径宜为 300m。"
         diffs = detect_modal_verb_diffs(answer, chunks)
         self.assertEqual(diffs, [])
+
+
+# ──────────────────────────────────────────────
+# W7 D1 · align_numbers 单测（后处理矩阵第 3 层，治 dim5 数字精确）
+# ──────────────────────────────────────────────
+
+
+class TestAlignNumbersBasic(unittest.TestCase):
+    """数字校正基础 case"""
+
+    def test_number_correction_with_unit(self):
+        """chunks "300m"，answer 写错成 "350m" → 改回 300m"""
+        chunks = ["服务半径宜为 300m~500m。"]
+        answer = "服务半径宜为 350m~500m。"
+        aligned, n = align_numbers(answer, chunks)
+        self.assertEqual(n, 1)
+        self.assertIn("300m", aligned)
+        self.assertNotIn("350m", aligned)
+
+    def test_percent_correction(self):
+        """百分比校正：35% → 30%"""
+        chunks = ["居住区绿地率不应低于 35%。"]
+        answer = "居住区绿地率不应低于 30%。"
+        aligned, n = align_numbers(answer, chunks)
+        self.assertEqual(n, 1)
+        self.assertIn("35%", aligned)
+
+
+class TestAlignNumbersPreservation(unittest.TestCase):
+    """不该改的场景"""
+
+    def test_matching_numbers_no_change(self):
+        chunks = ["卧室使用面积不应小于 5m²。"]
+        answer = "卧室使用面积不应小于 5m²。"
+        aligned, n = align_numbers(answer, chunks)
+        self.assertEqual(n, 0)
+        self.assertEqual(aligned, answer)
+
+    def test_direction_flip_skipped(self):
+        """方向词翻转保守跳过（chunks 大于，answer 小于）"""
+        chunks = ["绿地率宜大于 35%。"]
+        answer = "绿地率不应小于 40%。"
+        aligned, n = align_numbers(answer, chunks)
+        # 方向词翻转 → 跳过，不改成 "不应小于 35%" 这种语义反的话
+        self.assertEqual(n, 0)
+        self.assertIn("40%", aligned)
+
+    def test_no_chunks_no_change(self):
+        chunks = []
+        answer = "卧室面积 5m²"
+        aligned, n = align_numbers(answer, chunks)
+        self.assertEqual(n, 0)
+        self.assertEqual(aligned, answer)
+
+    def test_empty_inputs(self):
+        self.assertEqual(align_numbers("", ["x"]), ("", 0))
+        self.assertEqual(align_numbers("x", []), ("x", 0))
+
+
+class TestAlignNumbersConservative(unittest.TestCase):
+    """保守策略 — 不匹配上下文不该改"""
+
+    def test_unrelated_number_not_changed(self):
+        """answer 出现 chunks 无关上下文的数字 → 不改"""
+        chunks = ["服务半径宜为 300m。"]
+        answer = "本助手提示：详见 GB 50180-2018 中相关 5 条规定。"
+        aligned, n = align_numbers(answer, chunks)
+        # 5 跟 300 完全不匹配上下文
+        self.assertEqual(n, 0)
+
+    def test_min_match_chars_threshold(self):
+        """anchor 上下文匹配字符少于 5 时不改（保守）"""
+        chunks = ["A 300m。"]
+        answer = "B 500m。"
+        aligned, n = align_numbers(answer, chunks)
+        # prefix 仅 "A " vs "B "（差异 + 太短），suffix 仅 "。"
+        # 不应匹配
+        self.assertEqual(n, 0)
+
+
+class TestAlignNumbersMultiple(unittest.TestCase):
+    """多个数字校正"""
+
+    def test_multiple_corrections(self):
+        chunks = [
+            "服务半径宜为 300m。",
+            "建筑高度不应大于 24m。",
+        ]
+        answer = "服务半径宜为 350m。建筑高度不应大于 28m。"
+        aligned, n = align_numbers(answer, chunks)
+        self.assertEqual(n, 2)
+        self.assertIn("300m", aligned)
+        self.assertIn("24m", aligned)
+        self.assertNotIn("350m", aligned)
+        self.assertNotIn("28m", aligned)
+
+
+class TestDetectNumberDiffs(unittest.TestCase):
+    """detect 模式（不修改）"""
+
+    def test_detect_returns_diffs(self):
+        chunks = ["服务半径宜为 300m。"]
+        answer = "服务半径宜为 350m。"
+        diffs = detect_number_diffs(answer, chunks)
+        self.assertEqual(len(diffs), 1)
+        self.assertEqual(diffs[0]["answer_number"], "350m")
+        self.assertEqual(diffs[0]["chunks_number"], "300m")
+
+    def test_detect_no_diff_when_aligned(self):
+        chunks = ["服务半径宜为 300m。"]
+        answer = "服务半径宜为 300m。"
+        diffs = detect_number_diffs(answer, chunks)
+        self.assertEqual(diffs, [])
+
+
+class TestAlignNumbersChainWithModal(unittest.TestCase):
+    """链式叠加 align_modal_verbs + align_numbers（W7 D1 后处理矩阵第 3 层）"""
+
+    def test_chained_modal_then_numbers(self):
+        """LLM 同时改了量词和数字 — 链式修复"""
+        chunks = ["服务半径宜为 300m。"]
+        answer = "服务半径应为 350m。"
+        # 第 1 步 align_modal_verbs
+        aligned1, n1 = align_modal_verbs(answer, chunks)
+        self.assertEqual(n1, 1)
+        self.assertIn("宜为", aligned1)
+        # 第 2 步 align_numbers
+        aligned2, n2 = align_numbers(aligned1, chunks)
+        self.assertEqual(n2, 1)
+        self.assertIn("300m", aligned2)
+        # 最终：完全跟 chunks 一致
+        self.assertEqual(aligned2.strip("。"), "服务半径宜为 300m")
 
 
 if __name__ == "__main__":

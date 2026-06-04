@@ -296,7 +296,13 @@ def run_rag_sync(
 
     # W6 D2：post_filter 剥离"补充说明"节，治 LLM 训练惯性导致的 dim7 编造（启示 52+54）
     # W6 D4：链式叠加 align_modal_verbs，治 dim4 用词错训练惯性（启示 58）
-    from app.rag.post_filter import align_modal_verbs, strip_supplementary_sections
+    # W7 D1：尝试链式叠加 align_numbers 治 dim5 — 实测综合 -6.7 / dim5 -19.9pp
+    #        按 CLAUDE.md F.2 已回滚集成（函数 + 单测保留，但 pipeline 不调用）。
+    #        启示 62：后处理矩阵叠加不是无条件 — 数字类比量词更危险。详见 W7_D1.md。
+    from app.rag.post_filter import (
+        align_modal_verbs,
+        strip_supplementary_sections,
+    )
     cleaned_answer, n_stripped_chars = strip_supplementary_sections(full_answer)
     if n_stripped_chars > 0:
         logger.info(
@@ -313,15 +319,21 @@ def run_rag_sync(
             f"按 chunks 原词校正）"
         )
 
-    # 是否触发任何后处理（strip 或 align）
-    post_filter_touched = (n_stripped_chars > 0) or (n_modal_corrections > 0)
+    # W7 D1 回滚：n_number_corrections 永远 0（保字段兼容前端 metadata）
+    n_number_corrections = 0
+
+    # 是否触发任何后处理（strip / align_modal）
+    post_filter_touched = (
+        n_stripped_chars > 0
+        or n_modal_corrections > 0
+    )
 
     # citations 在 done 之前下发，让前端可以"答案完→显示引用"
     yield {
         "type": "citations",
         "data": [_build_citation(p) for p in kept_payloads],
     }
-    # W5 D4 + W6 D2 + W6 D4：metadata 事件携带 dangling_count + post_filter 全链路信息
+    # W5 D4 + W6 D2 + W6 D4 + W7 D1：metadata 事件携带 dangling + post_filter 全链路信息
     yield {
         "type": "metadata",
         "data": {
@@ -330,7 +342,8 @@ def run_rag_sync(
             "n_chunks_available": n_chunks,
             "post_filter_stripped_chars": n_stripped_chars,
             "post_filter_applied": post_filter_touched,
-            "modal_verb_corrections": n_modal_corrections,  # W6 D4 新增
+            "modal_verb_corrections": n_modal_corrections,
+            "number_corrections": n_number_corrections,  # W7 D1 新增
         },
     }
     # W6 D2 + D4：revised_answer 事件 — 任何后处理生效时下发最终版（前端覆盖 / 评测优先消费）

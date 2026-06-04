@@ -25,7 +25,7 @@ export interface DoneMeta {
   tokens_out: number
 }
 
-/** W5 D4 + W6 D2 + W6 D4：pipeline 元数据（dangling + post_filter + modal align） */
+/** W5 D4 + W6 D2 + W6 D4 + W7 D1：pipeline 元数据（dangling + post_filter 矩阵 3 层） */
 export interface PipelineMeta {
   dangling_count: number
   n_citations_in_answer: number
@@ -34,6 +34,8 @@ export interface PipelineMeta {
   post_filter_applied?: boolean
   /** W6 D4：量词对齐校正次数（"宜/应/不应"被改回 chunks 原词的次数）*/
   modal_verb_corrections?: number
+  /** W7 D1：数字对齐校正次数（"300m/35%"被改回 chunks 原值的次数）*/
+  number_corrections?: number
 }
 
 /** SSE 事件类型 */
