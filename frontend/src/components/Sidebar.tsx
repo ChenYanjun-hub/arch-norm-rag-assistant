@@ -15,6 +15,8 @@ const DOMAIN_CAT: Record<string, string> = {
   建筑: 'arch',
   景观: 'landscape',
   消防: 'arch',
+  结构: 'structure',
+  市政: 'municipal',
 }
 
 // 接口未就绪时的回退（与入库实测一致），避免首屏闪空

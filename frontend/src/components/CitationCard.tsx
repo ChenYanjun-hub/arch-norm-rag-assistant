@@ -15,10 +15,14 @@ interface Props {
 }
 
 /** 根据 domain 映射设计 token 中的分类色 */
-function domainKey(domain: string): 'arch' | 'landscape' | 'planning' {
+function domainKey(
+  domain: string,
+): 'arch' | 'landscape' | 'planning' | 'structure' | 'municipal' {
   if (domain.includes('景观')) return 'landscape'
   if (domain.includes('规划')) return 'planning'
-  return 'arch' // 建筑 / 消防 默认归入建筑深绿系
+  if (domain.includes('结构')) return 'structure'
+  if (domain.includes('市政')) return 'municipal'
+  return 'arch' // 建筑 / 消防 默认归入建筑深蓝系
 }
 
 export function CitationCard({ index, citation, active, onClick }: Props) {

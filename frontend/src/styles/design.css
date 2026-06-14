@@ -52,6 +52,8 @@
   --cat-arch: #005BAC;       /* 建筑 — 同济蓝 */
   --cat-landscape: #6b6033;  /* 景观 — 橄榄 */
   --cat-planning: #1a5390;   /* 规划 — 深蓝（与建筑同系深一档区分） */
+  --cat-structure: #5b6b7b;  /* 结构 — 钢灰蓝（W7 D8 新域）*/
+  --cat-municipal: #8a5a44;  /* 市政 — 砖褐（W7 D8 新域）*/
 
   /* type */
   --font-sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Source Han Sans CN", "Noto Sans CJK SC", system-ui, sans-serif;
@@ -397,6 +399,8 @@
 .cn-cat-arch { background: var(--cat-arch); }
 .cn-cat-landscape { background: var(--cat-landscape); }
 .cn-cat-planning { background: var(--cat-planning); }
+.cn-cat-structure { background: var(--cat-structure); }
+.cn-cat-municipal { background: var(--cat-municipal); }
 
 /* ---------- Input bar ---------- */
 

@@ -117,20 +117,20 @@ def main() -> int:
     elapsed = time.time() - t0
     logger.info(f"[reindex] ✅ 全部完成，总耗时 {elapsed:.1f}s")
 
-    # 验证：随便查一个修过的 chunk
-    from app.rag.retriever import search
-    test_q = "为发挥道路绿化在改善城市生态环境"
-    test_vec = embed_texts([test_q], batch_size=1)[0]
-    results = search(test_vec, top_k=3)
-    if results:
-        logger.info(f"[reindex] 验证检索 '改善城市生态环境' top1: {results[0].payload.get('chunk_id')}")
-        text_preview = (results[0].payload.get('text') or '')[:80]
-        logger.info(f"[reindex] top1 text: {text_preview}...")
-        # OCR 修复验证
-        if "改善城市生态环境" in text_preview:
-            logger.info("[reindex] ✅ OCR 修复 reindex 成功（top1 text 含'改善城市生态环境'）")
-        else:
-            logger.warning("[reindex] ⚠️  top1 text 未含修复词，可能 reindex 未生效")
+    # 验证：随便查一个 chunk（纯 sanity log，失败绝不影响 reindex 退出码）
+    # search() 返回 list[dict]，每项 {score, payload}（非 ScoredPoint 对象）
+    try:
+        from app.rag.retriever import search
+        test_q = "为发挥道路绿化在改善城市生态环境"
+        test_vec = embed_texts([test_q], batch_size=1)[0]
+        results = search(test_vec, top_k=3)
+        if results:
+            payload = results[0].get("payload", {})
+            logger.info(f"[reindex] 验证检索 top1: {payload.get('chunk_id')}")
+            text_preview = (payload.get("text") or "")[:80]
+            logger.info(f"[reindex] top1 text: {text_preview}...")
+    except Exception as e:  # 验证失败不致命：upsert 已成功
+        logger.warning(f"[reindex] 收尾验证跳过（非致命）：{e}")
     return 0
 
 
