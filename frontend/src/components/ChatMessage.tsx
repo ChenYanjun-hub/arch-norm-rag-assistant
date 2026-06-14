@@ -1,7 +1,8 @@
 // 单条聊天消息（cn-msg-user / cn-msg-card 设计语言）
 // 设计参考：claude design/pc-mock.jsx · UserMsg + AIMsg
 
-import type { ChatMessage as ChatMessageType } from '../types/chat'
+import type { ChatMessage as ChatMessageType, Citation } from '../types/chat'
+import { CitationCard } from './CitationCard'
 
 interface Props {
   message: ChatMessageType
@@ -9,6 +10,8 @@ interface Props {
   activeCite?: number | null
   /** 点击正文 [N] chip 时回调 */
   onCiteClick?: (n: number) => void
+  /** 窄屏内联引用（<1024px 右栏隐藏时在消息内展示，保证溯源可见）*/
+  inlineCitations?: Citation[]
 }
 
 /** 把 token 文本里的 [N] 转换成 cn-cite chip */
@@ -36,8 +39,16 @@ function renderWithCitations(
           e.stopPropagation()
           onCiteClick?.(n)
         }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            e.stopPropagation()
+            onCiteClick?.(n)
+          }
+        }}
         role="button"
         tabIndex={0}
+        aria-label={`查看第 ${n} 条规范引用`}
       >
         <span>[{n}]</span>
       </span>,
@@ -50,12 +61,12 @@ function renderWithCitations(
   return parts
 }
 
-export function ChatMessage({ message, activeCite, onCiteClick }: Props) {
+export function ChatMessage({ message, activeCite, onCiteClick, inlineCitations }: Props) {
   const isUser = message.role === 'user'
 
   if (isUser) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 18 }}>
+      <div className="cn-msg-row" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 18 }}>
         <div
           style={{
             display: 'flex',
@@ -74,7 +85,7 @@ export function ChatMessage({ message, activeCite, onCiteClick }: Props) {
 
   // assistant
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 18 }}>
+    <div className="cn-msg-row" style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 18 }}>
       <div
         style={{
           width: 32,
@@ -161,6 +172,18 @@ export function ChatMessage({ message, activeCite, onCiteClick }: Props) {
             </div>
           )}
         </div>
+
+        {/* 窄屏（<1024px 右栏隐藏）内联引用 — 保证「可溯源」核心价值不丢 */}
+        {inlineCitations && inlineCitations.length > 0 && (
+          <details className="cn-cites-inline">
+            <summary>规范出处 · {inlineCitations.length} 条引用</summary>
+            <div className="cn-cites-inline-list">
+              {inlineCitations.map((c, i) => (
+                <CitationCard key={i} index={i + 1} citation={c} />
+              ))}
+            </div>
+          </details>
+        )}
       </div>
     </div>
   )

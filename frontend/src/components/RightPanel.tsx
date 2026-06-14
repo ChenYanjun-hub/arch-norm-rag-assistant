@@ -54,16 +54,18 @@ export function RightPanel({ citations, activeIndex, onActiveChange, meta }: Pro
           <button
             className="cn-right-tab"
             disabled
+            aria-disabled="true"
             style={{ cursor: 'not-allowed', opacity: 0.4 }}
-            title="PDF 原文跳转 · W3 上线"
+            title="PDF 原文跳转 · 规划中"
           >
             PDF 原文
           </button>
           <button
             className="cn-right-tab"
             disabled
+            aria-disabled="true"
             style={{ cursor: 'not-allowed', opacity: 0.4 }}
-            title="关联条文 · V2 上线"
+            title="关联条文 · 规划中"
           >
             关联
           </button>

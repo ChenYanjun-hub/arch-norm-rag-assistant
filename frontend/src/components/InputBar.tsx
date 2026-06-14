@@ -40,29 +40,15 @@ export function InputBar({ disabled, onSubmit }: Props) {
           }
         />
         <div className="cn-input-row">
+          {/* 路线图占位（功能未上线，禁用态）— 不含范围外的「上传图纸」(见 CLAUDE.md A.2) */}
           <button
             className="cn-input-chip"
             disabled
-            title="W3 上线"
-            style={{ opacity: 0.5, cursor: 'not-allowed' }}
-          >
-            📎 上传图纸
-          </button>
-          <button
-            className="cn-input-chip"
-            disabled
-            title="W3 上线"
+            aria-disabled="true"
+            title="按条文号精准引用 · 规划中"
             style={{ opacity: 0.5, cursor: 'not-allowed' }}
           >
             @ 引用条文
-          </button>
-          <button
-            className="cn-input-chip"
-            disabled
-            title="V2 上线"
-            style={{ opacity: 0.5, cursor: 'not-allowed' }}
-          >
-            # 项目
           </button>
           <div style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--ink-faint)' }}>
             <span style={{ fontFamily: 'var(--font-mono)' }}>{value.length}</span> / 500
@@ -72,8 +58,9 @@ export function InputBar({ disabled, onSubmit }: Props) {
             disabled={!value.trim() || disabled}
             onClick={send}
             title={disabled ? '回答中…' : '发送'}
+            aria-label={disabled ? '回答中' : '发送问题'}
           >
-            <span style={{ fontSize: 14, lineHeight: 1 }}>↑</span>
+            <span style={{ fontSize: 14, lineHeight: 1 }} aria-hidden="true">↑</span>
           </button>
         </div>
       </div>

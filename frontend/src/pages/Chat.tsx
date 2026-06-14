@@ -147,6 +147,7 @@ export function ChatPage() {
                   onCiteClick={
                     m.id === lastAssistantId ? (n) => setActiveCite(n) : undefined
                   }
+                  inlineCitations={m.id === lastAssistantId ? citations : undefined}
                 />
               ))
             )}

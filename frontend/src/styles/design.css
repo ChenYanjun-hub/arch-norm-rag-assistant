@@ -682,7 +682,57 @@
   to { visibility: hidden; }
 }
 
+/* ---------- 窄屏内联引用：宽屏走右栏，<1024px 内联展示（保证可溯源）---------- */
+.cn-cites-inline { display: none; }
+
 /* ---------- 响应式：移动端隐藏左右栏 ---------- */
 @media (max-width: 1024px) {
   .cn-layout-sidebar, .cn-layout-rightpanel { display: none !important; }
+
+  /* 右栏隐藏后，引用卡片在消息内以可折叠形式出现 */
+  .cn-cites-inline {
+    display: block;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--border);
+  }
+  .cn-cites-inline > summary {
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+    padding: 4px 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--primary);
+  }
+  .cn-cites-inline > summary::-webkit-details-marker { display: none; }
+  .cn-cites-inline > summary::before { content: '▸ '; color: var(--ink-mute); }
+  .cn-cites-inline[open] > summary::before { content: '▾ '; }
+  .cn-cites-inline-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 10px;
+  }
+}
+
+/* ---------- a11y：键盘焦点环（:focus-visible 仅键盘触发，不影响鼠标）---------- */
+.cn-cite:focus-visible,
+.cn-input-chip:focus-visible,
+.cn-input-send:focus-visible,
+.cn-right-tab:focus-visible,
+.cn-msg-tool:focus-visible,
+.cn-cites-inline > summary:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* ---------- 视觉：新消息淡入（尊重 prefers-reduced-motion）---------- */
+@keyframes cn-msg-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .cn-msg-row { animation: cn-msg-in 0.28s ease both; }
 }
