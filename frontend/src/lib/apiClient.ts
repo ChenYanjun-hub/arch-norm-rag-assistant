@@ -7,7 +7,7 @@
 //
 // 多帧之间用 \n\n 分隔；每帧 event/data 字段用 \n 分隔。
 
-import type { ChatRequest, SSEEvent } from '../types/chat'
+import type { ChatRequest, CorpusStats, SSEEvent } from '../types/chat'
 
 const API_BASE = '' // 走 Vite proxy，前端只用相对路径
 
@@ -106,6 +106,13 @@ export async function* streamChat(
 /** 健康检查 */
 export async function healthCheck(): Promise<{ status: string; version: string }> {
   const resp = await fetch(`${API_BASE}/api/health`)
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+  return resp.json()
+}
+
+/** 规范库语料统计（部数/条数/分类）— 前端动态计数，失败时调用方回退默认值 */
+export async function getStats(): Promise<CorpusStats> {
+  const resp = await fetch(`${API_BASE}/api/stats`)
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
   return resp.json()
 }

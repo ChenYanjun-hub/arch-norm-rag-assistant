@@ -60,8 +60,10 @@ desktop.ini
 logs/
 
 # ── 模型缓存（HuggingFace 等大文件）──
+# /models/ 锚定仓库根，仅忽略根级 ML 权重目录；
+# 不能用裸 models/，否则会误伤源码目录 backend/app/models/（Pydantic schemas）
 .cache/
-models/
+/models/
 
 # ──────────────────────────────────────────────
 # 项目专属排除

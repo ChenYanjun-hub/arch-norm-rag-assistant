@@ -1,19 +1,34 @@
 // 左侧导航栏（cn-app 设计语言 · 深绿色文档感）
-// MVP 阶段：logo + 新建对话 + 静态规范分类占位
-// 历史会话 / 项目工作区 / 收藏 / 用户都留占位
+// 规范分类计数从 GET /api/stats 动态读取（接口未就绪时回退默认值）
+
+import type { CorpusStats } from '../types/chat'
 
 interface Props {
   onNewChat?: () => void
+  /** 语料统计（动态计数）；null 时用回退默认值 */
+  stats?: CorpusStats | null
 }
 
-const TAXONOMY = [
-  { id: 'planning', cat: 'planning', label: '规划', count: 18 },
-  { id: 'arch', cat: 'arch', label: '建筑', count: 11 },
-  { id: 'landscape', cat: 'landscape', label: '景观', count: 7 },
-  { id: 'fire', cat: 'arch', label: '消防', count: 3 },
-] as const
+// domain → 设计 token 分类色（展示层映射，留前端）
+const DOMAIN_CAT: Record<string, string> = {
+  规划: 'planning',
+  建筑: 'arch',
+  景观: 'landscape',
+  消防: 'arch',
+}
 
-export function Sidebar({ onNewChat }: Props) {
+// 接口未就绪时的回退（与入库实测一致），避免首屏闪空
+const FALLBACK_DOMAINS = [
+  { domain: '规划', spec_count: 18 },
+  { domain: '建筑', spec_count: 11 },
+  { domain: '景观', spec_count: 7 },
+  { domain: '消防', spec_count: 3 },
+]
+
+export function Sidebar({ onNewChat, stats }: Props) {
+  const domains = stats?.domains ?? FALLBACK_DOMAINS
+  const totalSpecs = stats?.total_specs ?? 39
+
   return (
     <aside
       className="cn-layout-sidebar"
@@ -46,17 +61,17 @@ export function Sidebar({ onNewChat }: Props) {
         <div className="cn-side-section">
           <div className="cn-side-section-title">
             <span>规范分类</span>
-            <span style={{ fontSize: 10 }}>39 部</span>
+            <span style={{ fontSize: 10 }}>{totalSpecs} 部</span>
           </div>
           <div>
-            {TAXONOMY.map((t) => (
-              <div key={t.id} className="cn-side-item">
+            {domains.map((t) => (
+              <div key={t.domain} className="cn-side-item">
                 <span
-                  className={`cn-tag-dot cn-cat-${t.cat}`}
+                  className={`cn-tag-dot cn-cat-${DOMAIN_CAT[t.domain] ?? 'arch'}`}
                   style={{ width: 8, height: 8, borderRadius: 2 }}
                 />
-                <span style={{ fontWeight: 500 }}>{t.label}</span>
-                <span className="cn-side-meta">{t.count}</span>
+                <span style={{ fontWeight: 500 }}>{t.domain}</span>
+                <span className="cn-side-meta">{t.spec_count}</span>
               </div>
             ))}
           </div>

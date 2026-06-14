@@ -6,7 +6,8 @@ import { ChatMessage } from '../components/ChatMessage'
 import { Sidebar } from '../components/Sidebar'
 import { RightPanel } from '../components/RightPanel'
 import { InputBar } from '../components/InputBar'
-import type { Citation } from '../types/chat'
+import { getStats } from '../lib/apiClient'
+import type { Citation, CorpusStats } from '../types/chat'
 
 const SAMPLE_QUERIES = [
   '居住区配套幼儿园的服务半径不应大于多少米？',
@@ -22,7 +23,17 @@ export function ChatPage() {
   const clear = useChatStore((s) => s.clear)
 
   const [activeCite, setActiveCite] = useState<number | null>(null)
+  const [stats, setStats] = useState<CorpusStats | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  // 拉规范库语料统计（动态计数）；失败则各组件回退默认值
+  useEffect(() => {
+    getStats()
+      .then(setStats)
+      .catch(() => {
+        /* 接口未就绪：Sidebar/顶栏用回退默认值，不阻塞 UI */
+      })
+  }, [])
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -51,6 +62,13 @@ export function ChatPage() {
     [...messages].reverse().find((m) => m.role === 'user')?.content?.slice(0, 50) ??
     '建景规·助手 — 设计规范智能查询'
 
+  // 规范库覆盖（动态计数，接口未就绪时回退）
+  const coverageDomains =
+    stats?.domains.map((d) => d.domain).join(' / ') ?? '规划 / 建筑 / 景观 / 消防'
+  const domainCount = stats?.domain_count ?? 4
+  const totalSpecs = stats?.total_specs ?? 39
+  const totalChunks = stats?.total_chunks ?? 4773
+
   return (
     <div
       className="cn-app"
@@ -61,7 +79,7 @@ export function ChatPage() {
         overflow: 'hidden',
       }}
     >
-      <Sidebar onNewChat={clear} />
+      <Sidebar onNewChat={clear} stats={stats} />
 
       <main
         style={{
@@ -100,7 +118,8 @@ export function ChatPage() {
               </span>
             </div>
             <div className="cn-topbar-sub">
-              覆盖规划 / 建筑 / 景观 / 消防 4 类 · 39 部规范 · 4773 条条文
+              覆盖{coverageDomains} {domainCount} 类 · {totalSpecs} 部规范 ·{' '}
+              {totalChunks} 条条文
               {citations.length > 0 && (
                 <>
                   {' · '}
@@ -137,7 +156,7 @@ export function ChatPage() {
         >
           <div style={{ maxWidth: 760, width: '100%', margin: '0 auto', minHeight: '100%' }}>
             {messages.length === 0 ? (
-              <EmptyState onPick={handleSubmit} />
+              <EmptyState onPick={handleSubmit} coverage={`${coverageDomains} ${domainCount} 类`} />
             ) : (
               messages.map((m) => (
                 <ChatMessage
@@ -170,7 +189,13 @@ export function ChatPage() {
   )
 }
 
-function EmptyState({ onPick }: { onPick: (q: string) => void }) {
+function EmptyState({
+  onPick,
+  coverage,
+}: {
+  onPick: (q: string) => void
+  coverage: string
+}) {
   return (
     <div style={{ textAlign: 'center', padding: '60px 8px' }}>
       <div className="cn-brand-mark-lg" style={{ marginBottom: 18 }} aria-label="品牌标识">
@@ -196,7 +221,7 @@ function EmptyState({ onPick }: { onPick: (q: string) => void }) {
           lineHeight: 1.7,
         }}
       >
-        覆盖规划 / 建筑 / 景观 / 消防 4 类设计规范<br />
+        覆盖{coverage}设计规范<br />
         所有答案附规范号 + 条文号 + 原文引用，可追溯、不编造
       </p>
 

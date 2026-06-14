@@ -84,3 +84,18 @@ export interface ChatRequest {
   domain?: string
   spec_code?: string
 }
+
+/** 单域统计（对应后端 DomainStat） */
+export interface DomainStat {
+  domain: string
+  spec_count: number
+  chunk_count: number
+}
+
+/** 语料统计（对应后端 CorpusStats，GET /api/stats）— 前端动态计数 */
+export interface CorpusStats {
+  total_specs: number
+  total_chunks: number
+  domain_count: number
+  domains: DomainStat[]
+}
