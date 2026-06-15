@@ -42,6 +42,11 @@ RE_SECTION = re.compile(r"^\s*(\d{1,2}\.\d{1,2})\s+\S")
 # OCR 经常吃掉条文号后空格，所以用 negative lookahead 而非要求 \s
 RE_CLAUSE_3 = re.compile(r"^\s*(\d{1,2}\.\d{1,2}\.\d{1,3})(?!\d)")
 RE_CLAUSE_4 = re.compile(r"^\s*(\d{1,2}\.\d{1,2}\.\d{1,3}\.\d{1,3})(?!\d)")
+# 「第X条」中文条款（建设标准/条例类，无小数条款号）— 仅 article 回退模式用
+# X = 中文数字或阿拉伯数字；排除「第X条例」（避免匹配标题里的"条例"二字）
+_CN_NUM = "一二三四五六七八九十百千零〇0-9"
+RE_CLAUSE_ARTICLE = re.compile(rf"^\s*第\s*([{_CN_NUM}]{{1,6}})\s*条(?!例)")
+RE_CHAPTER_CN = re.compile(rf"^\s*第\s*([{_CN_NUM}]{{1,3}})\s*章")
 # 附录内条文：行首 A.0.1 / B.0.1 / C.1.2 等（字母+数字层级）
 RE_CLAUSE_APPENDIX = re.compile(r"^\s*([A-Z]\.\d{1,2}(?:\.\d{1,3}){1,2})(?!\d)")
 # 表 / 公式 / 附录
@@ -187,155 +192,186 @@ def chunk_pdf(
     logger.info(f"[chunker] 处理 {pdf_path.name} → {spec_code} 《{spec_name}》")
 
     doc = fitz.open(pdf_path)
-    chunks: list[Chunk] = []
 
-    # 状态机
-    state: dict = {
-        "chapter": None,
-        "section": None,
-        "clause": None,
-        "buf": [],  # list[str]
-        "page_start": None,
-        "is_mandatory": False,
-        "type": "clause",
-        "in_appendix": False,
-    }
+    def run_pass(article_mode: bool) -> list[Chunk]:
+        """单遍切块。article_mode=True 时按「第X条」切（建标/条例类）；
+        =False 时按 GB/JGJ 小数条款切（默认，逻辑与原版完全一致）。"""
+        chunks: list[Chunk] = []
+        state: dict = {
+            "chapter": None,
+            "section": None,
+            "clause": None,
+            "buf": [],  # list[str]
+            "page_start": None,
+            "is_mandatory": False,
+            "type": "clause",
+            "in_appendix": False,
+        }
 
-    def flush() -> None:
-        """提交当前累积的 buf 为一个或多个 chunk。"""
-        if not state["clause"] or not state["buf"]:
-            return
-        text = "\n".join(state["buf"]).strip()
-        if len(text) < 3:
+        def flush() -> None:
+            """提交当前累积的 buf 为一个或多个 chunk。"""
+            if not state["clause"] or not state["buf"]:
+                return
+            text = "\n".join(state["buf"]).strip()
+            if len(text) < 3:
+                state["buf"] = []
+                return
+
+            # OCR 后 bold 信息常丢失，flush 时基于整段文本做关键词复检
+            if not state["is_mandatory"] and state["type"] in ("clause", "appendix"):
+                if _has_mandatory_keyword(text):
+                    state["is_mandatory"] = True
+
+            if len(text) > MAX_CHUNK_SIZE and state["type"] in ("clause", "appendix"):
+                # 决策 4：超长条文按子项切，clause 加 -N 后缀
+                for i, sub in enumerate(_split_long_text(text, MAX_CHUNK_SIZE), start=1):
+                    _emit(chunks, sub, state, spec_code, spec_name, domain, source, suffix=f"-{i}")
+            else:
+                _emit(chunks, text, state, spec_code, spec_name, domain, source)
+
             state["buf"] = []
-            return
+            state["is_mandatory"] = False
+            state["type"] = "appendix" if state["in_appendix"] else "clause"
 
-        # OCR 后 bold 信息常丢失，flush 时基于整段文本做关键词复检
-        if not state["is_mandatory"] and state["type"] in ("clause", "appendix"):
-            if _has_mandatory_keyword(text):
-                state["is_mandatory"] = True
-
-        if len(text) > MAX_CHUNK_SIZE and state["type"] in ("clause", "appendix"):
-            # 决策 4：超长条文按子项切，clause 加 -N 后缀
-            for i, sub in enumerate(_split_long_text(text, MAX_CHUNK_SIZE), start=1):
-                _emit(chunks, sub, state, spec_code, spec_name, domain, source, suffix=f"-{i}")
-        else:
-            _emit(chunks, text, state, spec_code, spec_name, domain, source)
-
-        state["buf"] = []
-        state["is_mandatory"] = False
-        state["type"] = "appendix" if state["in_appendix"] else "clause"
-
-    for page_num, page in enumerate(doc, start=1):
-        try:
-            page_dict = page.get_text("dict")
-        except Exception as e:
-            logger.warning(f"[chunker] page {page_num} 解析失败：{e}")
-            continue
-
-        for block in page_dict.get("blocks", []):
-            if block.get("type") != 0:  # 0 = text
+        for page_num, page in enumerate(doc, start=1):
+            try:
+                page_dict = page.get_text("dict")
+            except Exception as e:
+                logger.warning(f"[chunker] page {page_num} 解析失败：{e}")
                 continue
-            for line in block.get("lines", []):
-                spans = line.get("spans", [])
-                if not spans:
-                    continue
-                text = "".join(s["text"] for s in spans).strip()
-                if not text:
-                    continue
-                line_bold = _line_is_bold(spans)
-                size = _avg_size(spans)
 
-                # ── 附录开始 ──（必须字号 ≥ 章节级 + 短行，避免目录污染）
-                if (
-                    not state["in_appendix"]
-                    and RE_APPENDIX_START.match(text)
-                    and size >= SIZE_APPENDIX_MIN
-                    and len(text) <= 30
-                ):
-                    flush()
-                    state["in_appendix"] = True
-                    state["chapter"] = text
-                    state["section"] = None
-                    state["clause"] = None
-                    state["type"] = "appendix"
+            for block in page_dict.get("blocks", []):
+                if block.get("type") != 0:  # 0 = text
                     continue
-
-                # ── 表格头 ──
-                if m := RE_TABLE_HEAD.match(text):
-                    flush()
-                    state["clause"] = f"表{m.group(1)}"
-                    state["type"] = "table"
-                    state["page_start"] = page_num
-                    state["is_mandatory"] = False
-                    state["buf"].append(text)
-                    continue
-
-                # ── 公式 ──
-                if m := RE_FORMULA.match(text):
-                    flush()
-                    state["clause"] = f"式{m.group(1)}"
-                    state["type"] = "formula"
-                    state["page_start"] = page_num
-                    state["is_mandatory"] = False
-                    state["buf"].append(text)
-                    continue
-
-                # ── 条（先匹配 4 级，再 3 级，再附录 A.0.1）──
-                if m := (
-                    RE_CLAUSE_4.match(text)
-                    or RE_CLAUSE_3.match(text)
-                    or (RE_CLAUSE_APPENDIX.match(text) if state["in_appendix"] else None)
-                ):
-                    flush()
-                    state["clause"] = m.group(1)
-                    state["type"] = "appendix" if state["in_appendix"] else "clause"
-                    state["page_start"] = page_num
-                    state["is_mandatory"] = line_bold or _has_mandatory_keyword(text)
-                    state["buf"].append(text)
-                    continue
-
-                # ── 节（X.Y）──
-                if RE_SECTION.match(text) and not RE_CLAUSE_3.match(text):
-                    # 节标题字号显著大于正文，且为短行
-                    if (size >= SIZE_SECTION_MIN and len(text) <= 30) or line_bold:
-                        flush()
-                        state["section"] = text
-                        state["clause"] = None
+                for line in block.get("lines", []):
+                    spans = line.get("spans", [])
+                    if not spans:
                         continue
+                    text = "".join(s["text"] for s in spans).strip()
+                    if not text:
+                        continue
+                    line_bold = _line_is_bold(spans)
+                    size = _avg_size(spans)
 
-                # ── 章（X）──
-                if (
-                    RE_CHAPTER.match(text)
-                    and not RE_SECTION.match(text)
-                    and not RE_CLAUSE_3.match(text)
-                ):
-                    # 章标题：字号显著大 + 长度合理 + 含足够中文（排除"20"页码、"20 4-"碎片）
-                    cn_count = sum(1 for ch in text if "一" <= ch <= "鿿")
+                    # ── 附录开始 ──（仅小数模式；字号 ≥ 章节级 + 短行，避免目录污染）
                     if (
-                        size >= SIZE_CHAPTER_MIN
-                        and 4 <= len(text) <= 25
-                        and cn_count >= 2  # 至少 2 个中文字
+                        not article_mode
+                        and not state["in_appendix"]
+                        and RE_APPENDIX_START.match(text)
+                        and size >= SIZE_APPENDIX_MIN
+                        and len(text) <= 30
                     ):
                         flush()
+                        state["in_appendix"] = True
                         state["chapter"] = text
                         state["section"] = None
                         state["clause"] = None
+                        state["type"] = "appendix"
                         continue
 
-                # ── 默认：累加到当前 chunk ──
-                if state["clause"]:
-                    state["buf"].append(text)
-                    if line_bold and state["type"] == "clause" and not state["is_mandatory"]:
-                        state["is_mandatory"] = True
+                    # ── 表格头 ──（两模式通用）
+                    if m := RE_TABLE_HEAD.match(text):
+                        flush()
+                        state["clause"] = f"表{m.group(1)}"
+                        state["type"] = "table"
+                        state["page_start"] = page_num
+                        state["is_mandatory"] = False
+                        state["buf"].append(text)
+                        continue
 
-    # 末尾 flush
-    flush()
+                    # ── 公式 ──（两模式通用）
+                    if m := RE_FORMULA.match(text):
+                        flush()
+                        state["clause"] = f"式{m.group(1)}"
+                        state["type"] = "formula"
+                        state["page_start"] = page_num
+                        state["is_mandatory"] = False
+                        state["buf"].append(text)
+                        continue
+
+                    if article_mode:
+                        # ── 第X章（章标题，仅元数据）──
+                        if RE_CHAPTER_CN.match(text) and len(text) <= 30:
+                            flush()
+                            state["chapter"] = text
+                            state["section"] = None
+                            state["clause"] = None
+                            continue
+                        # ── 第X条（条款边界）──
+                        if m := RE_CLAUSE_ARTICLE.match(text):
+                            flush()
+                            state["clause"] = f"第{m.group(1)}条"
+                            state["type"] = "clause"
+                            state["page_start"] = page_num
+                            state["is_mandatory"] = line_bold or _has_mandatory_keyword(text)
+                            state["buf"].append(text)
+                            continue
+                    else:
+                        # ── 条（先匹配 4 级，再 3 级，再附录 A.0.1）──
+                        if m := (
+                            RE_CLAUSE_4.match(text)
+                            or RE_CLAUSE_3.match(text)
+                            or (RE_CLAUSE_APPENDIX.match(text) if state["in_appendix"] else None)
+                        ):
+                            flush()
+                            state["clause"] = m.group(1)
+                            state["type"] = "appendix" if state["in_appendix"] else "clause"
+                            state["page_start"] = page_num
+                            state["is_mandatory"] = line_bold or _has_mandatory_keyword(text)
+                            state["buf"].append(text)
+                            continue
+
+                        # ── 节（X.Y）──
+                        if RE_SECTION.match(text) and not RE_CLAUSE_3.match(text):
+                            # 节标题字号显著大于正文，且为短行
+                            if (size >= SIZE_SECTION_MIN and len(text) <= 30) or line_bold:
+                                flush()
+                                state["section"] = text
+                                state["clause"] = None
+                                continue
+
+                        # ── 章（X）──
+                        if (
+                            RE_CHAPTER.match(text)
+                            and not RE_SECTION.match(text)
+                            and not RE_CLAUSE_3.match(text)
+                        ):
+                            # 章标题：字号显著大 + 长度合理 + 含足够中文
+                            cn_count = sum(1 for ch in text if "一" <= ch <= "鿿")
+                            if (
+                                size >= SIZE_CHAPTER_MIN
+                                and 4 <= len(text) <= 25
+                                and cn_count >= 2  # 至少 2 个中文字
+                            ):
+                                flush()
+                                state["chapter"] = text
+                                state["section"] = None
+                                state["clause"] = None
+                                continue
+
+                    # ── 默认：累加到当前 chunk ──
+                    if state["clause"]:
+                        state["buf"].append(text)
+                        if line_bold and state["type"] == "clause" and not state["is_mandatory"]:
+                            state["is_mandatory"] = True
+
+        flush()  # 末尾 flush
+        return _merge_too_short(chunks)
+
+    # 主：小数条款模式。产出过少（建标/条例用「第X条」，小数模式 0 块或仅几个
+    # OCR 误识的垃圾块）时跑 article 模式，取块数更多者。
+    # 零回归：正常 GB/JGJ 规范小数模式 ≥10 块，不跑 article；即便跑，其「第X条」
+    # 命中≈0，max 仍选小数结果。
+    chunks = run_pass(article_mode=False)
+    if len(chunks) < 10:
+        article_chunks = run_pass(article_mode=True)
+        if len(article_chunks) > len(chunks):
+            logger.info(
+                f"[chunker] {pdf_path.name} 小数 {len(chunks)} 块 → 「第X条」{len(article_chunks)} 块（取后者）"
+            )
+            chunks = article_chunks
+
     doc.close()
-
-    # 应用 min_chunk_size 合并
-    chunks = _merge_too_short(chunks)
-
     logger.info(f"[chunker] {pdf_path.name} 完成：{len(chunks)} 个 chunks")
     return chunks
 
