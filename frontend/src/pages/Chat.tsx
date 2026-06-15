@@ -167,6 +167,7 @@ export function ChatPage() {
                     m.id === lastAssistantId ? (n) => setActiveCite(n) : undefined
                   }
                   inlineCitations={m.id === lastAssistantId ? citations : undefined}
+                  onFollowUp={m.id === lastAssistantId ? handleSubmit : undefined}
                 />
               ))
             )}

@@ -46,10 +46,16 @@ async def chat(req: ChatRequest) -> EventSourceResponse:
     def event_stream():
         """把 pipeline 的 dict 事件转为 SSE 'data: {json}' 帧。"""
         try:
+            history = (
+                [{"role": t.role, "content": t.content} for t in req.history]
+                if req.history
+                else None
+            )
             for evt in run_rag_sync(
                 req.query,
                 domain_filter=getattr(req, "domain", None),
                 spec_code_filter=getattr(req, "spec_code", None),
+                history=history,
             ):
                 # sse-starlette 接受 dict，会自动序列化 data 字段
                 yield {

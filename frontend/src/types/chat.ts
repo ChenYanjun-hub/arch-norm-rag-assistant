@@ -45,6 +45,7 @@ export type SSEEventType =
   | 'citations'
   | 'metadata'
   | 'revised_answer'
+  | 'follow_ups'
   | 'fallback'
   | 'done'
   | 'error'
@@ -55,6 +56,7 @@ export type SSEEvent =
   | { type: 'citations'; data: Citation[] }
   | { type: 'metadata'; data: PipelineMeta }
   | { type: 'revised_answer'; data: string }
+  | { type: 'follow_ups'; data: string[] }
   | { type: 'fallback'; data: string }
   | { type: 'done'; data: DoneMeta }
   | { type: 'error'; data: string }
@@ -73,8 +75,16 @@ export interface ChatMessage {
   meta?: PipelineMeta
   /** W6 D2：post_filter 触发时 LLM 原始回答（剥离前），保留供 debug */
   rawContent?: string
+  /** V2-1：智能追问推荐（点击即作为新 query 发送）*/
+  followUps?: string[]
   /** assistant 消息流式中 */
   streaming?: boolean
+}
+
+/** V2 多轮：单轮历史 */
+export interface ChatTurn {
+  role: 'user' | 'assistant'
+  content: string
 }
 
 /** chat 请求体 */
@@ -83,6 +93,8 @@ export interface ChatRequest {
   session_id?: string
   domain?: string
   spec_code?: string
+  /** V2-2 多轮：最近 N 轮历史（前端传，后端做指代消解）*/
+  history?: ChatTurn[]
 }
 
 /** 单域统计（对应后端 DomainStat） */

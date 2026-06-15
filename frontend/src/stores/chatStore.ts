@@ -28,6 +28,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!trimmed) return
     if (get().isStreaming) return
 
+    // V2-2：构造最近 N 轮历史（仅已完成的 user/assistant 文本，供后端指代消解）
+    const history = get()
+      .messages.filter(
+        (m) =>
+          (m.role === 'user' || m.role === 'assistant') &&
+          !!m.content &&
+          !m.streaming &&
+          !m.error,
+      )
+      .slice(-6)
+      .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+
     const userMsg: ChatMessage = {
       id: newId(),
       role: 'user',
@@ -52,10 +64,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
 
     try {
-      for await (const evt of streamChat({ query: trimmed, ...opts })) {
-        // W6 D4 临时调试：把事件流打到 console（验证 SSE 接收）
-        // eslint-disable-next-line no-console
-        console.log('[SSE]', evt.type, typeof evt.data === 'string' ? evt.data : evt.data)
+      for await (const evt of streamChat({
+        query: trimmed,
+        history: history.length ? history : undefined,
+        ...opts,
+      })) {
         switch (evt.type) {
           case 'retrieval':
             patch((m) => ({ ...m, retrieval: evt.data }))
@@ -74,6 +87,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
             // W6 D2：post_filter 剥离了"补充说明"节，用净化版覆盖 content
             // 原 content（streaming 中拼出的 LLM 原始回答）存到 rawContent，便于 debug
             patch((m) => ({ ...m, rawContent: m.content, content: evt.data }))
+            break
+          case 'follow_ups':
+            // V2-1：智能追问推荐
+            patch((m) => ({ ...m, followUps: evt.data }))
             break
           case 'fallback':
             patch((m) => ({ ...m, fallback: evt.data }))

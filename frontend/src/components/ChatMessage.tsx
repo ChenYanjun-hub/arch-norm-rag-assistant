@@ -12,6 +12,8 @@ interface Props {
   onCiteClick?: (n: number) => void
   /** 窄屏内联引用（<1024px 右栏隐藏时在消息内展示，保证溯源可见）*/
   inlineCitations?: Citation[]
+  /** V2-1：点击追问 chip → 作为新 query 发送 */
+  onFollowUp?: (q: string) => void
 }
 
 /** 把 token 文本里的 [N] 转换成 cn-cite chip */
@@ -61,7 +63,13 @@ function renderWithCitations(
   return parts
 }
 
-export function ChatMessage({ message, activeCite, onCiteClick, inlineCitations }: Props) {
+export function ChatMessage({
+  message,
+  activeCite,
+  onCiteClick,
+  inlineCitations,
+  onFollowUp,
+}: Props) {
   const isUser = message.role === 'user'
 
   if (isUser) {
@@ -183,6 +191,22 @@ export function ChatMessage({ message, activeCite, onCiteClick, inlineCitations 
               ))}
             </div>
           </details>
+        )}
+
+        {/* V2-1：智能追问 chip（点击作为新 query 发送）*/}
+        {message.followUps && message.followUps.length > 0 && onFollowUp && (
+          <div className="cn-followup-row">
+            {message.followUps.map((q, i) => (
+              <button
+                key={i}
+                className="cn-followup"
+                onClick={() => onFollowUp(q)}
+                aria-label={`追问：${q}`}
+              >
+                {q}
+              </button>
+            ))}
+          </div>
         )}
       </div>
     </div>

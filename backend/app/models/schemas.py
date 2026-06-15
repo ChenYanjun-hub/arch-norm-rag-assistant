@@ -13,6 +13,13 @@ from pydantic import BaseModel, Field
 # ──────────────────────────────────────────────
 # 问答接口
 # ──────────────────────────────────────────────
+class Turn(BaseModel):
+    """V2 多轮对话的单轮（前端传最近 N 轮历史）。"""
+
+    role: Literal["user", "assistant"]
+    content: str = Field(..., max_length=2000)
+
+
 class ChatRequest(BaseModel):
     """POST /api/chat 请求体。"""
 
@@ -22,6 +29,9 @@ class ChatRequest(BaseModel):
         None, description="可选 domain 限定（规划/建筑/景观/消防）"
     )
     spec_code: str | None = Field(None, description="可选 spec_code 限定")
+    history: list[Turn] | None = Field(
+        None, description="V2 多轮：最近 N 轮对话历史（用于指代消解）"
+    )
 
 
 class Citation(BaseModel):

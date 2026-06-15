@@ -84,6 +84,7 @@ def run_rag_sync(
     domain_filter: str | None = None,
     spec_code_filter: str | None = None,
     top_k: int | None = None,
+    history: list[dict[str, str]] | None = None,
 ) -> Iterator[dict[str, Any]]:
     """端到端 RAG（同步流式）。
 
@@ -101,8 +102,23 @@ def run_rag_sync(
     query = raw_query.strip()
     logger.info(
         f"[pipeline] query={query[:60]!r} "
-        f"domain={domain_filter} spec={spec_code_filter}"
+        f"domain={domain_filter} spec={spec_code_filter} turns={len(history) if history else 0}"
     )
+
+    # ── V2-2 多轮指代消解：有历史时把 follow-up 改写成独立 query，再走后续全流程 ──
+    # 放在场景识别前：让"那消防呢"这类片段先解析成完整问题，避免被误判为模糊。
+    # RED LINE：rewrite 只补指代不增信息，失败回退原 query（generator 内已兜底）。
+    if history:
+        from app.rag.generator import rewrite_with_context
+        hist_text = "\n".join(
+            f"{'用户' if t.get('role') == 'user' else '助手'}：{(t.get('content') or '')[:200]}"
+            for t in history[-6:]  # 最近 3 轮（6 条消息）
+        )
+        rewritten = rewrite_with_context(hist_text, query)
+        if rewritten and rewritten != query:
+            logger.info(f"[pipeline] 多轮重写: {query!r} → {rewritten!r}")
+            query = rewritten
+            raw_query = rewritten  # 场景识别也基于重写后的独立问题
 
     # ── 场景识别短路（CLAUDE.md E.4 判定优先级，8 类全覆盖）──
     scenario = detect_scenario(raw_query)
@@ -352,6 +368,14 @@ def run_rag_sync(
             "type": "revised_answer",
             "data": aligned_answer,
         }
+
+    # V2-1 智能追问：据问答生成 2-3 个相关追问，在 done 前下发（失败静默返回 []）
+    final_answer = aligned_answer if post_filter_touched else full_answer
+    from app.rag.generator import generate_followups
+    follow_ups = generate_followups(query, final_answer)
+    if follow_ups:
+        yield {"type": "follow_ups", "data": follow_ups}
+
     if done_event:
         yield done_event
     else:

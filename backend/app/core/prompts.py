@@ -219,3 +219,87 @@ def build_query_rewrite_messages(query: str) -> list[dict[str, str]]:
             "content": USER_PROMPT_QUERY_REWRITE_TEMPLATE.format(query=query.strip()),
         },
     ]
+
+
+# ──────────────────────────────────────────────
+# V2-1：智能追问推荐（根据答案生成相关追问）
+# ──────────────────────────────────────────────
+SYSTEM_PROMPT_FOLLOWUP = """\
+你是设计规范查询助手的「追问推荐」模块。根据用户的问题和已给出的回答，生成 2-3 个用户接着最可能想问的【相关追问】。
+
+【规则】
+1. 紧扣当前规范主题，是自然的下一步问题（如问了服务半径，可追问规模/间距/设置要求）
+2. 每个 ≤ 20 字，口语化，像设计师真的会接着问的
+3. 不重复用户已问的问题，不憋脚地复述答案
+4. 必须能用规范库回答（围绕规划/建筑/景观/消防/结构/市政设计规范），不要发散到无关话题
+5. 严格输出 JSON 数组：["追问1","追问2","追问3"]，不要任何解释、前缀或 Markdown 围栏
+"""
+
+USER_PROMPT_FOLLOWUP_TEMPLATE = """\
+用户问题：{query}
+
+已给出的回答（节选）：
+{answer}
+
+请输出 2-3 个相关追问（仅 JSON 数组）："""
+
+
+def build_followup_messages(query: str, answer: str) -> list[dict[str, str]]:
+    """构造追问推荐的 chat messages。answer 取前 600 字够判主题。"""
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT_FOLLOWUP},
+        {
+            "role": "user",
+            "content": USER_PROMPT_FOLLOWUP_TEMPLATE.format(
+                query=query.strip(), answer=answer[:600]
+            ),
+        },
+    ]
+
+
+# ──────────────────────────────────────────────
+# V2-2：多轮对话 — 上下文指代消解（把 follow-up 改写成独立 query）
+# ──────────────────────────────────────────────
+SYSTEM_PROMPT_CONTEXT_REWRITE = """\
+你是多轮对话的「指代消解」模块。给你对话历史和用户最新一句，把最新一句改写成【脱离上下文也能独立检索的完整问题】。
+
+【规则】
+1. 只补全指代和省略（"那/这/它/上面/刚才/还有呢/消防呢"等），用历史里的主题词补全
+2. 绝不增加历史中没有的信息，绝不回答问题，绝不改变原意
+3. 若最新一句本身已是完整独立问题，原样返回
+4. 只输出改写后的问题本身，一句话，不要解释、不要引号
+
+【示例】
+历史：
+用户：居住区配套幼儿园的服务半径不应大于多少米？
+助手：……不宜大于 300m……
+最新一句：那托儿所呢？
+输出：居住区配套托儿所的服务半径要求是多少？
+
+【示例】
+历史：
+用户：防火墙的耐火极限要求？
+助手：……不低于 3.00h……
+最新一句：城市道路照明的照度标准是多少？
+输出：城市道路照明的照度标准是多少？"""
+
+USER_PROMPT_CONTEXT_REWRITE_TEMPLATE = """\
+对话历史：
+{history}
+
+最新一句：{query}
+
+改写后的独立问题："""
+
+
+def build_context_rewrite_messages(history: str, query: str) -> list[dict[str, str]]:
+    """构造上下文重写的 chat messages。history 为已格式化的多轮文本。"""
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT_CONTEXT_REWRITE},
+        {
+            "role": "user",
+            "content": USER_PROMPT_CONTEXT_REWRITE_TEMPLATE.format(
+                history=history.strip(), query=query.strip()
+            ),
+        },
+    ]

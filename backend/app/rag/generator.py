@@ -82,6 +82,59 @@ def _create_stream(messages: list[dict[str, str]], **kwargs: Any) -> Any:
     )
 
 
+@retry(
+    stop=stop_after_attempt(LLM_MAX_RETRIES + 1),
+    wait=wait_exponential(multiplier=1, min=1, max=4),
+    retry=retry_if_exception_type(_retryable),
+    reraise=True,
+)
+def _complete_once(messages: list[dict[str, str]], **kwargs: Any) -> str:
+    """内部：非流式单次 completion（追问/重写等短任务用），含重试。"""
+    client = get_client()
+    resp = client.chat.completions.create(
+        model=settings.deepseek_model, messages=messages, stream=False, **kwargs
+    )
+    return resp.choices[0].message.content or ""
+
+
+def generate_followups(query: str, answer: str) -> list[str]:
+    """V2-1：据问答生成 2-3 个相关追问。任何失败返回 []（绝不影响主流程）。"""
+    import json as _json
+
+    from app.core.prompts import build_followup_messages
+
+    try:
+        out = _complete_once(
+            build_followup_messages(query, answer), temperature=0.5, max_tokens=200
+        )
+        out = out.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        arr = _json.loads(out)
+        if isinstance(arr, list):
+            qs = [str(q).strip() for q in arr if str(q).strip()]
+            return qs[:3]
+    except Exception as e:  # 追问是增强功能，失败静默降级
+        logger.warning(f"[generator] 追问生成失败（忽略）：{e}")
+    return []
+
+
+def rewrite_with_context(history: str, query: str) -> str:
+    """V2-2：多轮指代消解，把 follow-up 改写成独立 query。失败/异常返回原 query。"""
+    from app.core.prompts import build_context_rewrite_messages
+
+    try:
+        out = _complete_once(
+            build_context_rewrite_messages(history, query),
+            temperature=0.0, max_tokens=120,
+        )
+        out = out.strip().strip('"“” 　')
+        # 防御：重写结果异常长/空时回退原 query（RED LINE：不引入幻觉问题）
+        if out and len(out) <= 200:
+            return out
+    except Exception as e:
+        logger.warning(f"[generator] 上下文重写失败（用原 query）：{e}")
+    return query
+
+
 def stream_chat_sync(
     messages: list[dict[str, str]],
     *,
