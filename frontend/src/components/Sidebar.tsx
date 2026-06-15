@@ -1,12 +1,20 @@
 // 左侧导航栏（cn-app 设计语言 · 深绿色文档感）
 // 规范分类计数从 GET /api/stats 动态读取（接口未就绪时回退默认值）
 
-import type { CorpusStats } from '../types/chat'
+import type { Conversation, CorpusStats } from '../types/chat'
 
 interface Props {
   onNewChat?: () => void
   /** 语料统计（动态计数）；null 时用回退默认值 */
   stats?: CorpusStats | null
+  /** V2-3：历史会话列表 */
+  conversations?: Conversation[]
+  /** 当前激活会话 id */
+  activeId?: string | null
+  /** 点击历史项 → 切换 */
+  onSelectConversation?: (id: string) => void
+  /** 删除历史项 */
+  onDeleteConversation?: (id: string) => void
 }
 
 // domain → 设计 token 分类色（展示层映射，留前端）
@@ -27,7 +35,14 @@ const FALLBACK_DOMAINS = [
   { domain: '消防', spec_count: 3 },
 ]
 
-export function Sidebar({ onNewChat, stats }: Props) {
+export function Sidebar({
+  onNewChat,
+  stats,
+  conversations = [],
+  activeId = null,
+  onSelectConversation,
+  onDeleteConversation,
+}: Props) {
   const domains = stats?.domains ?? FALLBACK_DOMAINS
   const totalSpecs = stats?.total_specs ?? 39
 
@@ -82,11 +97,45 @@ export function Sidebar({ onNewChat, stats }: Props) {
         <div className="cn-side-section">
           <div className="cn-side-section-title">
             <span>历史会话</span>
-            <span style={{ fontSize: 10 }}>0</span>
+            <span style={{ fontSize: 10 }}>{conversations.length}</span>
           </div>
-          <div style={{ color: 'var(--sidebar-text-mute)', fontSize: 12, padding: '6px 10px' }}>
-            暂无历史 · 会话持久化 V2 上线
-          </div>
+          {conversations.length === 0 ? (
+            <div className="cn-hist-empty">暂无历史 · 提问后自动保存到本地</div>
+          ) : (
+            <div>
+              {conversations.map((c) => (
+                <div
+                  key={c.id}
+                  className={'cn-hist-item' + (c.id === activeId ? ' is-active' : '')}
+                  onClick={() => onSelectConversation?.(c.id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      onSelectConversation?.(c.id)
+                    }
+                  }}
+                  title={c.title}
+                >
+                  <span className="cn-side-icon" aria-hidden>
+                    💬
+                  </span>
+                  <span className="cn-hist-title">{c.title}</span>
+                  <button
+                    className="cn-hist-del"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onDeleteConversation?.(c.id)
+                    }}
+                    aria-label={`删除会话：${c.title}`}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

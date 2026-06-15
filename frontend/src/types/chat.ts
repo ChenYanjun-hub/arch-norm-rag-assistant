@@ -87,6 +87,16 @@ export interface ChatTurn {
   content: string
 }
 
+/** V2-3：一段完整会话（localStorage 持久化单元）*/
+export interface Conversation {
+  id: string
+  /** 标题（取首条用户问题前若干字）*/
+  title: string
+  messages: ChatMessage[]
+  createdAt: number
+  updatedAt: number
+}
+
 /** chat 请求体 */
 export interface ChatRequest {
   query: string

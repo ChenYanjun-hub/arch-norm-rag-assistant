@@ -1,7 +1,7 @@
 // 问答主页面（三栏布局 · 设计参考 claude design/pc-mock.jsx）
 
 import { useEffect, useRef, useState } from 'react'
-import { useChatStore } from '../stores/chatStore'
+import { useChatStore, useActiveMessages } from '../stores/chatStore'
 import { ChatMessage } from '../components/ChatMessage'
 import { Sidebar } from '../components/Sidebar'
 import { RightPanel } from '../components/RightPanel'
@@ -17,10 +17,14 @@ const SAMPLE_QUERIES = [
 ]
 
 export function ChatPage() {
-  const messages = useChatStore((s) => s.messages)
+  const messages = useActiveMessages()
+  const conversations = useChatStore((s) => s.conversations)
+  const activeId = useChatStore((s) => s.activeId)
   const isStreaming = useChatStore((s) => s.isStreaming)
   const send = useChatStore((s) => s.send)
-  const clear = useChatStore((s) => s.clear)
+  const newConversation = useChatStore((s) => s.newConversation)
+  const switchConversation = useChatStore((s) => s.switchConversation)
+  const deleteConversation = useChatStore((s) => s.deleteConversation)
 
   const [activeCite, setActiveCite] = useState<number | null>(null)
   const [stats, setStats] = useState<CorpusStats | null>(null)
@@ -42,11 +46,23 @@ export function ChatPage() {
     })
   }, [messages])
 
-  // 新一轮对话开始时清空 activeCite
+  // 新一轮对话开始 / 切换会话时清空 activeCite
   useEffect(() => {
     setActiveCite(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages.length])
+  }, [messages.length, activeId])
+
+  // ⌘N / Ctrl+N 新建对话（侧栏已标注该快捷键）
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'n' || e.key === 'N')) {
+        e.preventDefault()
+        newConversation()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [newConversation])
 
   function handleSubmit(q: string) {
     if (!q.trim() || isStreaming) return
@@ -79,7 +95,14 @@ export function ChatPage() {
         overflow: 'hidden',
       }}
     >
-      <Sidebar onNewChat={clear} stats={stats} />
+      <Sidebar
+        onNewChat={newConversation}
+        stats={stats}
+        conversations={conversations}
+        activeId={activeId}
+        onSelectConversation={switchConversation}
+        onDeleteConversation={deleteConversation}
+      />
 
       <main
         style={{
@@ -134,10 +157,10 @@ export function ChatPage() {
               <button
                 className="cn-msg-tool"
                 style={{ padding: '6px 10px' }}
-                onClick={clear}
+                onClick={newConversation}
                 disabled={isStreaming}
               >
-                清空对话
+                新建对话
               </button>
             )}
           </div>
