@@ -177,6 +177,21 @@
 }
 .cn-filter-chip-x:hover { background: rgba(0,0,0,0.06); color: var(--terracotta); }
 
+/* PDF 原文内嵌 tab */
+.cn-pdf-switch { display: flex; flex-wrap: wrap; gap: 5px; }
+.cn-pdf-chip {
+  min-width: 22px; height: 22px; padding: 0 6px;
+  border: 1px solid var(--border); border-radius: 5px;
+  background: var(--paper); color: var(--ink-mute);
+  font-family: var(--font-mono); font-size: 11px; cursor: pointer;
+  transition: background .14s, color .14s, border-color .14s;
+}
+.cn-pdf-chip:hover { border-color: var(--primary-line); color: var(--primary); }
+.cn-pdf-chip.is-active { background: var(--primary); border-color: var(--primary); color: #fff; }
+.cn-pdf-meta { font-size: 11.5px; color: var(--ink-soft); line-height: 1.4; overflow: hidden; text-overflow: ellipsis; }
+.cn-pdf-open { align-self: flex-start; font-size: 11px; color: var(--primary); text-decoration: none; }
+.cn-pdf-open:hover { text-decoration: underline; }
+
 /* V2-3 历史会话列表 */
 .cn-hist-item {
   display: flex;
