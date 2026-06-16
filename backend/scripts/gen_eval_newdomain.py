@@ -87,10 +87,18 @@ def main() -> None:
     ap.add_argument("--domains", default="市政,结构")
     ap.add_argument("--per-spec", type=int, default=2)
     ap.add_argument("--target", type=int, default=25)
+    ap.add_argument("--specs", default="",
+                    help="逗号分隔 spec_code，只为这些规范生成（留空=整域）；用于精准补覆盖缺口")
     args = ap.parse_args()
 
     domains = set(args.domains.split(","))
     by_spec = _load_domain_chunks(domains)
+    if args.specs:
+        want = {s.strip() for s in args.specs.split(",") if s.strip()}
+        missing = want - set(by_spec)
+        if missing:
+            print(f"⚠️ 这些 spec_code 未在目标域语料中找到: {sorted(missing)}")
+        by_spec = {k: v for k, v in by_spec.items() if k in want}
     print(f"目标域 {domains}：{len(by_spec)} 部规范")
 
     # 每部挑 per_spec 条候选 chunk，再按 target 截断（轮转保证覆盖每部）
