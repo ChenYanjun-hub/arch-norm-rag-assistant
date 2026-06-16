@@ -6,9 +6,12 @@ import { useState } from 'react'
 interface Props {
   disabled?: boolean
   onSubmit: (query: string) => void
+  /** NAV：当前限定的规范（只查这部）；null = 不限定 */
+  specFilter?: { spec_code: string; spec_name: string } | null
+  onClearFilter?: () => void
 }
 
-export function InputBar({ disabled, onSubmit }: Props) {
+export function InputBar({ disabled, onSubmit, specFilter, onClearFilter }: Props) {
   const [value, setValue] = useState('')
 
   const send = () => {
@@ -20,6 +23,21 @@ export function InputBar({ disabled, onSubmit }: Props) {
   return (
     <div style={{ padding: '14px 28px 22px', background: 'linear-gradient(180deg, transparent, var(--bg) 30%)' }}>
       <div className="cn-input-shell">
+        {specFilter && (
+          <div className="cn-filter-chip">
+            <span style={{ opacity: 0.7 }}>只查</span>
+            <strong>《{specFilter.spec_name}》</strong>
+            <span className="cn-filter-chip-code">{specFilter.spec_code}</span>
+            <button
+              className="cn-filter-chip-x"
+              onClick={onClearFilter}
+              aria-label="清除规范限定"
+              title="清除限定，恢复全库检索"
+            >
+              ✕
+            </button>
+          </div>
+        )}
         <textarea
           className="cn-input-field"
           rows={2}
@@ -36,7 +54,9 @@ export function InputBar({ disabled, onSubmit }: Props) {
           placeholder={
             disabled
               ? '回答中…'
-              : '提出你的规范查询问题（Enter 发送，Shift+Enter 换行）'
+              : specFilter
+                ? `在《${specFilter.spec_name}》内提问（Enter 发送）`
+                : '提出你的规范查询问题（Enter 发送，Shift+Enter 换行）'
           }
         />
         <div className="cn-input-row">

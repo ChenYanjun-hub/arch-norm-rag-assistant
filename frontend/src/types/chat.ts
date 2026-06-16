@@ -116,11 +116,20 @@ export interface ChatRequest {
   history?: ChatTurn[]
 }
 
+/** 规范清单项（对应后端 SpecBrief）— 侧栏展开/点选导航 */
+export interface SpecBrief {
+  spec_code: string
+  spec_name: string
+  status: SpecStatus
+}
+
 /** 单域统计（对应后端 DomainStat） */
 export interface DomainStat {
   domain: string
   spec_count: number
   chunk_count: number
+  /** 该域规范清单（按标准号排序）*/
+  specs?: SpecBrief[]
 }
 
 /** 语料统计（对应后端 CorpusStats，GET /api/stats）— 前端动态计数 */

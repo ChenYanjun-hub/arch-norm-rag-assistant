@@ -17,7 +17,8 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from app.core.config import settings
-from app.models.schemas import CorpusStats, DomainStat
+from app.models.schemas import CorpusStats, DomainStat, SpecBrief
+from app.services.spec_status import get_spec_status
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -32,7 +33,8 @@ def _compute_stats() -> CorpusStats:
     if not chunks_dir.exists():
         raise FileNotFoundError(f"chunks 目录不存在: {chunks_dir}")
 
-    specs_by_domain: dict[str, set[str]] = defaultdict(set)
+    # domain → {spec_code: spec_name}（spec_name 取自入库元数据，干净，可直接展示）
+    names_by_domain: dict[str, dict[str, str]] = defaultdict(dict)
     chunks_by_domain: dict[str, int] = defaultdict(int)
 
     for jf in chunks_dir.glob("*.json"):
@@ -50,17 +52,31 @@ def _compute_stats() -> CorpusStats:
                 continue
             domain = ck.get("domain") or "未分类"
             spec_code = ck.get("spec_code") or jf.stem
-            specs_by_domain[domain].add(spec_code)
+            # 首见即记名（同一规范各 chunk 的 spec_name 一致）
+            names_by_domain[domain].setdefault(spec_code, ck.get("spec_name") or spec_code)
             chunks_by_domain[domain] += 1
 
-    domains = [
-        DomainStat(
-            domain=d,
-            spec_count=len(specs_by_domain[d]),
-            chunk_count=chunks_by_domain[d],
+    domains = []
+    for d, code_names in names_by_domain.items():
+        specs = sorted(
+            (
+                SpecBrief(
+                    spec_code=code,
+                    spec_name=name,
+                    status=get_spec_status(code)["status"],
+                )
+                for code, name in code_names.items()
+            ),
+            key=lambda s: s.spec_code,
         )
-        for d in specs_by_domain
-    ]
+        domains.append(
+            DomainStat(
+                domain=d,
+                spec_count=len(code_names),
+                chunk_count=chunks_by_domain[d],
+                specs=specs,
+            )
+        )
     # 按 chunk 数降序：规划 > 建筑 > 景观 > 消防（与前端展示顺序一致）
     domains.sort(key=lambda x: x.chunk_count, reverse=True)
 

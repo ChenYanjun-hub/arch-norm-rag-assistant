@@ -1,7 +1,8 @@
 // 左侧导航栏（cn-app 设计语言 · 深绿色文档感）
 // 规范分类计数从 GET /api/stats 动态读取（接口未就绪时回退默认值）
 
-import type { Conversation, CorpusStats } from '../types/chat'
+import { useState } from 'react'
+import type { Conversation, CorpusStats, SpecBrief } from '../types/chat'
 
 interface Props {
   onNewChat?: () => void
@@ -15,6 +16,10 @@ interface Props {
   onSelectConversation?: (id: string) => void
   /** 删除历史项 */
   onDeleteConversation?: (id: string) => void
+  /** 点击某部规范 → 限定只查该规范 */
+  onSelectSpec?: (spec: SpecBrief) => void
+  /** 当前限定的规范号（高亮）*/
+  activeSpecCode?: string | null
 }
 
 // domain → 设计 token 分类色（展示层映射，留前端）
@@ -25,6 +30,14 @@ const DOMAIN_CAT: Record<string, string> = {
   消防: 'arch',
   结构: 'structure',
   市政: 'municipal',
+}
+
+// 规范状态 → 小圆点颜色（复用 status token）
+const STATUS_COLOR: Record<string, string> = {
+  现行: 'var(--status-active)',
+  已废止: 'var(--status-deprecated)',
+  局部废止: 'var(--status-partial)',
+  即将实施: 'var(--indigo)',
 }
 
 // 接口未就绪时的回退（与入库实测一致），避免首屏闪空
@@ -42,9 +55,12 @@ export function Sidebar({
   activeId = null,
   onSelectConversation,
   onDeleteConversation,
+  onSelectSpec,
+  activeSpecCode = null,
 }: Props) {
   const domains = stats?.domains ?? FALLBACK_DOMAINS
   const totalSpecs = stats?.total_specs ?? 39
+  const [openDomains, setOpenDomains] = useState<Record<string, boolean>>({})
 
   return (
     <aside
@@ -81,16 +97,73 @@ export function Sidebar({
             <span style={{ fontSize: 10 }}>{totalSpecs} 部</span>
           </div>
           <div>
-            {domains.map((t) => (
-              <div key={t.domain} className="cn-side-item">
-                <span
-                  className={`cn-tag-dot cn-cat-${DOMAIN_CAT[t.domain] ?? 'arch'}`}
-                  style={{ width: 8, height: 8, borderRadius: 2 }}
-                />
-                <span style={{ fontWeight: 500 }}>{t.domain}</span>
-                <span className="cn-side-meta">{t.spec_count}</span>
-              </div>
-            ))}
+            {domains.map((t) => {
+              const open = !!openDomains[t.domain]
+              const specs: SpecBrief[] = (t as { specs?: SpecBrief[] }).specs ?? []
+              const toggle = () =>
+                setOpenDomains((s) => ({ ...s, [t.domain]: !s[t.domain] }))
+              return (
+                <div key={t.domain}>
+                  <div
+                    className="cn-side-item"
+                    onClick={toggle}
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={open}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        toggle()
+                      }
+                    }}
+                  >
+                    <span
+                      className="cn-side-caret"
+                      style={{ transform: open ? 'rotate(90deg)' : 'none' }}
+                      aria-hidden
+                    >
+                      ▸
+                    </span>
+                    <span
+                      className={`cn-tag-dot cn-cat-${DOMAIN_CAT[t.domain] ?? 'arch'}`}
+                      style={{ width: 8, height: 8, borderRadius: 2 }}
+                    />
+                    <span style={{ fontWeight: 500 }}>{t.domain}</span>
+                    <span className="cn-side-meta">{t.spec_count}</span>
+                  </div>
+                  {open && specs.length > 0 && (
+                    <div className="cn-spec-list">
+                      {specs.map((sp) => (
+                        <div
+                          key={sp.spec_code}
+                          className={
+                            'cn-spec-row' +
+                            (sp.spec_code === activeSpecCode ? ' is-active' : '')
+                          }
+                          onClick={() => onSelectSpec?.(sp)}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              onSelectSpec?.(sp)
+                            }
+                          }}
+                          title={`${sp.spec_name} ${sp.spec_code}（点击只查这部）`}
+                        >
+                          <span
+                            className="cn-spec-dot"
+                            style={{ background: STATUS_COLOR[sp.status] ?? STATUS_COLOR['现行'] }}
+                          />
+                          <span className="cn-spec-name">{sp.spec_name}</span>
+                          <span className="cn-spec-code">{sp.spec_code}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
 

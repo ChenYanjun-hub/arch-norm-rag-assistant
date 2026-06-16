@@ -78,12 +78,25 @@ class ErrorResponse(BaseModel):
 # ──────────────────────────────────────────────
 # 语料统计（GET /api/stats）— 前端动态展示规范库覆盖
 # ──────────────────────────────────────────────
+class SpecBrief(BaseModel):
+    """规范清单项（侧栏分类展开 / 点选导航用）。"""
+
+    spec_code: str = Field(..., description="标准号，如 GB 50180-2018")
+    spec_name: str = Field(..., description="规范全称（取自入库元数据，非 OCR 正文，干净）")
+    status: Literal["现行", "已废止", "局部废止", "即将实施"] = Field(
+        "现行", description="规范现行状态（复用 spec_status）"
+    )
+
+
 class DomainStat(BaseModel):
     """单个规范域的统计。"""
 
     domain: str = Field(..., description="规范域，如 规划/建筑/景观/消防")
     spec_count: int = Field(..., description="该域规范部数")
     chunk_count: int = Field(..., description="该域条文 chunk 数")
+    specs: list[SpecBrief] = Field(
+        default_factory=list, description="该域规范清单（按标准号排序）"
+    )
 
 
 class CorpusStats(BaseModel):

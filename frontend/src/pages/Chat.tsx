@@ -7,7 +7,7 @@ import { Sidebar } from '../components/Sidebar'
 import { RightPanel } from '../components/RightPanel'
 import { InputBar } from '../components/InputBar'
 import { getStats } from '../lib/apiClient'
-import type { Citation, CorpusStats } from '../types/chat'
+import type { Citation, CorpusStats, SpecBrief } from '../types/chat'
 
 const SAMPLE_QUERIES = [
   '居住区配套幼儿园的服务半径不应大于多少米？',
@@ -28,6 +28,8 @@ export function ChatPage() {
 
   const [activeCite, setActiveCite] = useState<number | null>(null)
   const [stats, setStats] = useState<CorpusStats | null>(null)
+  // 点侧栏某部规范 → 限定只查该规范（接通已有 spec_code 检索能力）
+  const [specFilter, setSpecFilter] = useState<SpecBrief | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // 拉规范库语料统计（动态计数）；失败则各组件回退默认值
@@ -66,7 +68,7 @@ export function ChatPage() {
 
   function handleSubmit(q: string) {
     if (!q.trim() || isStreaming) return
-    void send(q)
+    void send(q, specFilter ? { spec_code: specFilter.spec_code } : undefined)
   }
 
   // 最新一条 assistant 消息的引用 → 右栏
@@ -102,6 +104,8 @@ export function ChatPage() {
         activeId={activeId}
         onSelectConversation={switchConversation}
         onDeleteConversation={deleteConversation}
+        onSelectSpec={setSpecFilter}
+        activeSpecCode={specFilter?.spec_code ?? null}
       />
 
       <main
@@ -199,7 +203,12 @@ export function ChatPage() {
 
         {/* 输入栏 */}
         <div style={{ maxWidth: 880, width: '100%', margin: '0 auto', alignSelf: 'center' }}>
-          <InputBar disabled={isStreaming} onSubmit={handleSubmit} />
+          <InputBar
+            disabled={isStreaming}
+            onSubmit={handleSubmit}
+            specFilter={specFilter}
+            onClearFilter={() => setSpecFilter(null)}
+          />
         </div>
       </main>
 
