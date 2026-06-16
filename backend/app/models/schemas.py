@@ -43,6 +43,13 @@ class Citation(BaseModel):
     page: int | None = Field(None, description="PDF 页码（用于跳转）")
     is_mandatory: bool = Field(False, description="是否强制性条文")
     original_text: str = Field(..., max_length=200, description="原文摘引，建议 ≤ 50 字")
+    domain: str = Field("", description="规范类别，如 规划/建筑/景观/消防/结构/市政")
+    # 规范现行状态（默认"现行"，例外登记在 services/spec_status.py；🔴 状态不臆断）
+    status: Literal["现行", "已废止", "局部废止", "即将实施"] = Field(
+        "现行", description="规范现行状态"
+    )
+    replaced_by: str | None = Field(None, description="若已废止/被替代，现行替代标准号")
+    status_note: str | None = Field(None, description="状态补充说明，如废止/施行日期")
 
 
 ChatChunkType = Literal["token", "citations", "follow_ups", "done", "error"]

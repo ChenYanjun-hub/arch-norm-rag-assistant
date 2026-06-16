@@ -54,6 +54,7 @@ from app.services.fallback import (
     build_fallback_deprecated,
 )
 from app.services.scenario import _detect_deprecated, detect_scenario
+from app.services.spec_status import get_spec_status
 
 logger = logging.getLogger(__name__)
 
@@ -67,14 +68,17 @@ def _select_relevant_chunks(
 
 def _build_citation(chunk_payload: dict[str, Any]) -> dict[str, Any]:
     """从 chunk payload 抽取引用元数据（对应 schemas.Citation）。"""
+    spec_code = chunk_payload.get("spec_code", "")
     return {
         "spec_name": chunk_payload.get("spec_name", ""),
-        "spec_code": chunk_payload.get("spec_code", ""),
+        "spec_code": spec_code,
         "clause": chunk_payload.get("clause", ""),
         "page": chunk_payload.get("page_start") or chunk_payload.get("page"),
         "is_mandatory": bool(chunk_payload.get("is_mandatory", False)),
         "original_text": (chunk_payload.get("text") or "")[:200],
         "domain": chunk_payload.get("domain", ""),
+        # 规范现行状态（默认现行，例外见 services/spec_status）→ status/replaced_by/status_note
+        **get_spec_status(spec_code),
     }
 
 

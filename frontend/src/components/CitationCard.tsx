@@ -4,7 +4,7 @@
 // 后端 Citation 字段：spec_name / spec_code / clause / page / is_mandatory / original_text / domain
 // 设计稿额外字段（暂无后端数据，先省略）：状态徽章 / 释义 / PDF 缩略图 / 关联条文
 
-import type { Citation } from '../types/chat'
+import type { Citation, SpecStatus } from '../types/chat'
 
 interface Props {
   index: number
@@ -25,9 +25,20 @@ function domainKey(
   return 'arch' // 建筑 / 消防 默认归入建筑深蓝系
 }
 
+/** 规范状态 → 徽章 class + 文案 + 提示色（4 态，对应 CSS .cn-badge.is-*）*/
+const STATUS_META: Record<SpecStatus, { cls: string; label: string; color: string }> = {
+  现行: { cls: 'is-active', label: '现行有效', color: 'var(--status-active)' },
+  已废止: { cls: 'is-deprecated', label: '已废止', color: 'var(--status-deprecated)' },
+  局部废止: { cls: 'is-partial', label: '局部废止', color: 'var(--status-partial)' },
+  即将实施: { cls: 'is-upcoming', label: '即将实施', color: 'var(--indigo)' },
+}
+
 export function CitationCard({ index, citation, active, onClick }: Props) {
-  const { spec_name, spec_code, clause, page, is_mandatory, original_text, domain } =
-    citation
+  const {
+    spec_name, spec_code, clause, page, is_mandatory, original_text, domain,
+    status, replaced_by, status_note,
+  } = citation
+  const stMeta = STATUS_META[status ?? '现行'] ?? STATUS_META['现行']
 
   const clauseDisp =
     clause.startsWith('表') || clause.startsWith('式')
@@ -50,16 +61,10 @@ export function CitationCard({ index, citation, active, onClick }: Props) {
         <div className="cn-cite-eyebrow">
           <span className="cn-cite-num">{index}</span>
           <span>条文出处</span>
-          {is_mandatory && (
-            <span className="cn-badge is-partial" style={{ marginLeft: 'auto' }}>
-              强制性
-            </span>
-          )}
-          {!is_mandatory && (
-            <span className="cn-badge is-active" style={{ marginLeft: 'auto' }}>
-              现行有效
-            </span>
-          )}
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+            {is_mandatory && <span className="cn-badge is-partial">强制性</span>}
+            <span className={`cn-badge ${stMeta.cls}`}>{stMeta.label}</span>
+          </span>
         </div>
         <div className="cn-cite-title">《{spec_name}》</div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
@@ -86,6 +91,15 @@ export function CitationCard({ index, citation, active, onClick }: Props) {
             title={domain}
           />
         </div>
+
+        {/* 非现行状态：突出现行替代版本 / 废止说明（红线：状态来自权威例外表，不臆断）*/}
+        {status && status !== '现行' && (replaced_by || status_note) && (
+          <div style={{ marginTop: 6, fontSize: 11.5, fontWeight: 500, color: stMeta.color }}>
+            {replaced_by ? `现行版本：${replaced_by}` : ''}
+            {replaced_by && status_note ? ' · ' : ''}
+            {status_note ?? ''}
+          </div>
+        )}
       </div>
 
       <div className="cn-cite-body">

@@ -141,9 +141,19 @@ export function ChatMessage({
           {message.fallback && (
             <span style={{ color: 'var(--amber)' }}>● 兜底场景 · {message.fallback}</span>
           )}
-          {!message.fallback && message.done && (
-            <span style={{ color: 'var(--status-active)' }}>● 现行有效</span>
-          )}
+          {!message.fallback &&
+            message.done &&
+            (() => {
+              // 消息级状态：引用里有已废止/局部废止规范则告警（守"像查法条"的现行性）
+              const cites = message.citations ?? []
+              if (cites.some((c) => c.status === '已废止'))
+                return (
+                  <span style={{ color: 'var(--status-deprecated)' }}>● 含已废止规范</span>
+                )
+              if (cites.some((c) => c.status === '局部废止'))
+                return <span style={{ color: 'var(--status-partial)' }}>● 含局部废止规范</span>
+              return <span style={{ color: 'var(--status-active)' }}>● 现行有效</span>
+            })()}
         </div>
 
         <div className="cn-msg-card">

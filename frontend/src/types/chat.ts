@@ -1,6 +1,9 @@
 // 类型定义：与后端 schemas.py 保持一致
 
 /** 引用元数据（对应后端 Citation） */
+/** 规范现行状态（4 态，对应后端 spec_status + 前端徽章）*/
+export type SpecStatus = '现行' | '已废止' | '局部废止' | '即将实施'
+
 export interface Citation {
   spec_name: string
   spec_code: string
@@ -9,6 +12,12 @@ export interface Citation {
   is_mandatory: boolean
   original_text: string
   domain: string
+  /** 规范现行状态（缺省视为"现行"）*/
+  status?: SpecStatus
+  /** 若已废止/被替代：现行替代标准号 */
+  replaced_by?: string | null
+  /** 状态补充说明（废止/施行日期等）*/
+  status_note?: string | null
 }
 
 /** 检索元信息（pipeline 第一个事件） */

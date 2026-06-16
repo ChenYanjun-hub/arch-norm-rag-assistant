@@ -438,6 +438,8 @@
 .cn-badge.is-deprecated::before { background: var(--status-deprecated); }
 .cn-badge.is-partial { background: var(--status-partial-bg); color: var(--status-partial); }
 .cn-badge.is-partial::before { background: var(--status-partial); }
+.cn-badge.is-upcoming { background: #e9ecf4; color: var(--indigo); }
+.cn-badge.is-upcoming::before { background: var(--indigo); }
 
 /* category dots */
 .cn-cat-arch { background: var(--cat-arch); }
