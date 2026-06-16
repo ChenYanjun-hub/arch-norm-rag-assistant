@@ -111,7 +111,8 @@ export interface ChatRequest {
   query: string
   session_id?: string
   domain?: string
-  spec_code?: string
+  /** 多选条文限定：命中任一即可 */
+  spec_codes?: string[]
   /** V2-2 多轮：最近 N 轮历史（前端传，后端做指代消解）*/
   history?: ChatTurn[]
 }

@@ -26,6 +26,7 @@ from qdrant_client.models import (
     Distance,
     FieldCondition,
     Filter,
+    MatchAny,
     MatchValue,
     PointStruct,
     VectorParams,
@@ -144,7 +145,7 @@ def search(
     *,
     top_k: int = 20,
     domain_filter: str | None = None,
-    spec_code_filter: str | None = None,
+    spec_code_filter: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """向量检索。
 
@@ -152,7 +153,7 @@ def search(
         query_vector: 已编码的 query 向量
         top_k: 召回数量（CLAUDE.md E.2 默认 20 粗排）
         domain_filter: 可选 domain 限定（规划/建筑/景观/消防）
-        spec_code_filter: 可选 spec_code 限定（如 "GB 50180-2018"）
+        spec_code_filter: 可选 spec_code 列表限定（多选，命中任一即可）
 
     Returns:
         list[dict]，每项含 {score, payload}
@@ -165,8 +166,9 @@ def search(
             FieldCondition(key="domain", match=MatchValue(value=domain_filter))
         )
     if spec_code_filter:
+        # 多选：spec_code 命中列表中任一即可（每个 chunk 仅一个 spec_code）
         must_conds.append(
-            FieldCondition(key="spec_code", match=MatchValue(value=spec_code_filter))
+            FieldCondition(key="spec_code", match=MatchAny(any=list(spec_code_filter)))
         )
 
     query_filter = Filter(must=must_conds) if must_conds else None

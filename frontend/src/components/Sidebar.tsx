@@ -16,10 +16,10 @@ interface Props {
   onSelectConversation?: (id: string) => void
   /** 删除历史项 */
   onDeleteConversation?: (id: string) => void
-  /** 点击某部规范 → 限定只查该规范 */
+  /** 点击某部规范 → 切换该规范的限定（多选 toggle）*/
   onSelectSpec?: (spec: SpecBrief) => void
-  /** 当前限定的规范号（高亮）*/
-  activeSpecCode?: string | null
+  /** 当前限定的规范号列表（高亮）*/
+  activeSpecCodes?: string[]
 }
 
 // domain → 设计 token 分类色（展示层映射，留前端）
@@ -56,7 +56,7 @@ export function Sidebar({
   onSelectConversation,
   onDeleteConversation,
   onSelectSpec,
-  activeSpecCode = null,
+  activeSpecCodes = [],
 }: Props) {
   const domains = stats?.domains ?? FALLBACK_DOMAINS
   const totalSpecs = stats?.total_specs ?? 39
@@ -138,7 +138,7 @@ export function Sidebar({
                           key={sp.spec_code}
                           className={
                             'cn-spec-row' +
-                            (sp.spec_code === activeSpecCode ? ' is-active' : '')
+                            (activeSpecCodes.includes(sp.spec_code) ? ' is-active' : '')
                           }
                           onClick={() => onSelectSpec?.(sp)}
                           role="button"

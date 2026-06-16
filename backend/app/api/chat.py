@@ -54,7 +54,7 @@ async def chat(req: ChatRequest) -> EventSourceResponse:
             for evt in run_rag_sync(
                 req.query,
                 domain_filter=getattr(req, "domain", None),
-                spec_code_filter=getattr(req, "spec_code", None),
+                spec_code_filter=req.spec_codes,
                 history=history,
             ):
                 # sse-starlette 接受 dict，会自动序列化 data 字段

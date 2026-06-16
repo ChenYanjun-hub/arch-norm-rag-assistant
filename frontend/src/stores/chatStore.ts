@@ -21,7 +21,7 @@ interface ChatState {
   activeId: string | null
   isStreaming: boolean
   /** 用户提问，触发 SSE 流（无 activeId 时惰性新建会话）*/
-  send: (query: string, opts?: { domain?: string; spec_code?: string }) => Promise<void>
+  send: (query: string, opts?: { domain?: string; spec_codes?: string[] }) => Promise<void>
   /** 新建对话：回到空态，首次发送时才真正建会话（避免空会话堆积）*/
   newConversation: () => void
   /** 切换到指定历史会话 */

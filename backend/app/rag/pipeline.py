@@ -86,7 +86,7 @@ def run_rag_sync(
     query: str,
     *,
     domain_filter: str | None = None,
-    spec_code_filter: str | None = None,
+    spec_code_filter: list[str] | None = None,
     top_k: int | None = None,
     history: list[dict[str, str]] | None = None,
 ) -> Iterator[dict[str, Any]]:

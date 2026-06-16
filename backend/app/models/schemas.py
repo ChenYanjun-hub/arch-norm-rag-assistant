@@ -28,7 +28,9 @@ class ChatRequest(BaseModel):
     domain: str | None = Field(
         None, description="可选 domain 限定（规划/建筑/景观/消防）"
     )
-    spec_code: str | None = Field(None, description="可选 spec_code 限定")
+    spec_codes: list[str] | None = Field(
+        None, description="可选 spec_code 列表限定（多选，命中任一即可）"
+    )
     history: list[Turn] | None = Field(
         None, description="V2 多轮：最近 N 轮对话历史（用于指代消解）"
     )

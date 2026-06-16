@@ -28,8 +28,14 @@ export function ChatPage() {
 
   const [activeCite, setActiveCite] = useState<number | null>(null)
   const [stats, setStats] = useState<CorpusStats | null>(null)
-  // 点侧栏某部规范 → 限定只查该规范（接通已有 spec_code 检索能力）
-  const [specFilter, setSpecFilter] = useState<SpecBrief | null>(null)
+  // 点侧栏规范 → 多选限定只查这些规范（接通已有 spec_code 检索能力）
+  const [specFilters, setSpecFilters] = useState<SpecBrief[]>([])
+  const toggleSpec = (sp: SpecBrief) =>
+    setSpecFilters((prev) =>
+      prev.some((s) => s.spec_code === sp.spec_code)
+        ? prev.filter((s) => s.spec_code !== sp.spec_code)
+        : [...prev, sp],
+    )
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // 拉规范库语料统计（动态计数）；失败则各组件回退默认值
@@ -68,7 +74,10 @@ export function ChatPage() {
 
   function handleSubmit(q: string) {
     if (!q.trim() || isStreaming) return
-    void send(q, specFilter ? { spec_code: specFilter.spec_code } : undefined)
+    void send(
+      q,
+      specFilters.length ? { spec_codes: specFilters.map((s) => s.spec_code) } : undefined,
+    )
   }
 
   // 最新一条 assistant 消息的引用 → 右栏
@@ -104,8 +113,8 @@ export function ChatPage() {
         activeId={activeId}
         onSelectConversation={switchConversation}
         onDeleteConversation={deleteConversation}
-        onSelectSpec={setSpecFilter}
-        activeSpecCode={specFilter?.spec_code ?? null}
+        onSelectSpec={toggleSpec}
+        activeSpecCodes={specFilters.map((s) => s.spec_code)}
       />
 
       <main
@@ -206,8 +215,11 @@ export function ChatPage() {
           <InputBar
             disabled={isStreaming}
             onSubmit={handleSubmit}
-            specFilter={specFilter}
-            onClearFilter={() => setSpecFilter(null)}
+            specFilters={specFilters}
+            onRemoveFilter={(code) =>
+              setSpecFilters((prev) => prev.filter((s) => s.spec_code !== code))
+            }
+            onClearFilter={() => setSpecFilters([])}
           />
         </div>
       </main>

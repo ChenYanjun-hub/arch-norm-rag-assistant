@@ -6,12 +6,21 @@ import { useState } from 'react'
 interface Props {
   disabled?: boolean
   onSubmit: (query: string) => void
-  /** NAV：当前限定的规范（只查这部）；null = 不限定 */
-  specFilter?: { spec_code: string; spec_name: string } | null
+  /** NAV：当前限定的规范列表（多选，只查这些）；空 = 不限定 */
+  specFilters?: { spec_code: string; spec_name: string }[]
+  /** 移除单个限定 */
+  onRemoveFilter?: (specCode: string) => void
+  /** 清空全部限定 */
   onClearFilter?: () => void
 }
 
-export function InputBar({ disabled, onSubmit, specFilter, onClearFilter }: Props) {
+export function InputBar({
+  disabled,
+  onSubmit,
+  specFilters,
+  onRemoveFilter,
+  onClearFilter,
+}: Props) {
   const [value, setValue] = useState('')
 
   const send = () => {
@@ -23,19 +32,37 @@ export function InputBar({ disabled, onSubmit, specFilter, onClearFilter }: Prop
   return (
     <div style={{ padding: '14px 28px 22px', background: 'linear-gradient(180deg, transparent, var(--bg) 30%)' }}>
       <div className="cn-input-shell">
-        {specFilter && (
+        {specFilters && specFilters.length > 0 && (
           <div className="cn-filter-chip">
-            <span style={{ opacity: 0.7 }}>只查</span>
-            <strong>《{specFilter.spec_name}》</strong>
-            <span className="cn-filter-chip-code">{specFilter.spec_code}</span>
-            <button
-              className="cn-filter-chip-x"
-              onClick={onClearFilter}
-              aria-label="清除规范限定"
-              title="清除限定，恢复全库检索"
-            >
-              ✕
-            </button>
+            <span style={{ opacity: 0.7, flex: '0 0 auto' }}>只查</span>
+            <div className="cn-filter-pills">
+              {specFilters.map((s) => (
+                <span
+                  key={s.spec_code}
+                  className="cn-filter-pill"
+                  title={`${s.spec_name} ${s.spec_code}`}
+                >
+                  <span className="cn-filter-pill-name">《{s.spec_name}》</span>
+                  <button
+                    className="cn-filter-pill-x"
+                    onClick={() => onRemoveFilter?.(s.spec_code)}
+                    aria-label={`移除限定：${s.spec_name}`}
+                  >
+                    ✕
+                  </button>
+                </span>
+              ))}
+            </div>
+            {specFilters.length > 1 && (
+              <button
+                className="cn-filter-chip-clear"
+                onClick={onClearFilter}
+                title="清空全部限定，恢复全库检索"
+                aria-label="清空全部规范限定"
+              >
+                清空
+              </button>
+            )}
           </div>
         )}
         <textarea
@@ -54,8 +81,8 @@ export function InputBar({ disabled, onSubmit, specFilter, onClearFilter }: Prop
           placeholder={
             disabled
               ? '回答中…'
-              : specFilter
-                ? `在《${specFilter.spec_name}》内提问（Enter 发送）`
+              : specFilters && specFilters.length > 0
+                ? `在选定的 ${specFilters.length} 部规范内提问（Enter 发送）`
                 : '提出你的规范查询问题（Enter 发送，Shift+Enter 换行）'
           }
         />
