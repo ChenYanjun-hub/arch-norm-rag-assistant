@@ -9,12 +9,34 @@ import { InputBar } from '../components/InputBar'
 import { getStats } from '../lib/apiClient'
 import type { Citation, CorpusStats, SpecBrief } from '../types/chat'
 
+// 示例池（覆盖 6 域）；空态每次随机抽 N 条展示
 const SAMPLE_QUERIES = [
+  // 规划
   '居住区配套幼儿园的服务半径不应大于多少米？',
-  '防火墙的耐火极限要求是多少？',
-  '城市道路绿化的种植设计标准？',
+  '居住区人均公共绿地面积的最低要求？',
+  '居住区配套设施的设置规定有哪些？',
+  // 建筑
   '幼儿园建筑的活动单元应如何布置？',
+  '住宅卧室的最小使用面积是多少？',
+  '养老设施居室的使用面积要求？',
+  // 景观
+  '城市道路绿化的种植设计标准？',
+  '城市公园绿地的服务半径要求？',
+  // 消防
+  '防火墙的耐火极限要求是多少？',
+  '高层建筑消防车道的宽度要求？',
+  '安全出口的疏散距离规定？',
+  // 市政
+  '城市综合管廊内天然气管道如何敷设？',
+  '城市道路照明的评价指标有哪些？',
+  // 结构
+  '建筑抗震设防烈度如何确定？',
 ]
+
+/** 从示例池随机抽 n 条（空态每次进入 / 点"换一批"重抽）*/
+function pickSamples(n = 4): string[] {
+  return [...SAMPLE_QUERIES].sort(() => Math.random() - 0.5).slice(0, n)
+}
 
 export function ChatPage() {
   const messages = useActiveMessages()
@@ -241,6 +263,8 @@ function EmptyState({
   onPick: (q: string) => void
   coverage: string
 }) {
+  // 每次挂载（进空态/新建对话）随机抽一批；"换一批"可手动重抽
+  const [picks, setPicks] = useState<string[]>(pickSamples)
   return (
     <div style={{ textAlign: 'center', padding: '60px 8px' }}>
       <div className="cn-brand-mark-lg" style={{ marginBottom: 18 }} aria-label="品牌标识">
@@ -281,17 +305,42 @@ function EmptyState({
       >
         <div
           style={{
-            fontSize: 11,
-            color: 'var(--ink-faint)',
-            textAlign: 'left',
-            letterSpacing: '0.12em',
-            textTransform: 'uppercase',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
             marginBottom: 2,
           }}
         >
-          试试这些示例
+          <span
+            style={{
+              fontSize: 11,
+              color: 'var(--ink-faint)',
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+            }}
+          >
+            试试这些示例
+          </span>
+          <button
+            onClick={() => setPicks(pickSamples())}
+            title="换一批示例"
+            style={{
+              fontSize: 11,
+              color: 'var(--ink-faint)',
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              padding: '2px 4px',
+              transition: 'color .14s',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--primary)')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--ink-faint)')}
+          >
+            换一批 ↻
+          </button>
         </div>
-        {SAMPLE_QUERIES.map((q) => (
+        {picks.map((q) => (
           <button
             key={q}
             onClick={() => onPick(q)}
