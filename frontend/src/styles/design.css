@@ -815,6 +815,22 @@
   to { visibility: hidden; }
 }
 
+/* ---------- 思考中（首字到达前）三点动画 ---------- */
+.cn-thinking { display: inline-flex; align-items: center; gap: 9px; color: var(--ink-mute); font-size: 13.5px; }
+.cn-thinking-dots { display: inline-flex; gap: 4px; }
+.cn-thinking-dots i {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--primary);
+  animation: cn-think 1.2s infinite ease-in-out both;
+}
+.cn-thinking-dots i:nth-child(2) { animation-delay: 0.16s; }
+.cn-thinking-dots i:nth-child(3) { animation-delay: 0.32s; }
+.cn-thinking-text { letter-spacing: 0.02em; }
+@keyframes cn-think {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-4px); }
+}
+
 /* ---------- 窄屏内联引用：宽屏走右栏，<1024px 内联展示（保证可溯源）---------- */
 .cn-cites-inline { display: none; }
 

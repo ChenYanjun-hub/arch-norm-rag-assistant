@@ -161,6 +161,18 @@ export function ChatMessage({
             <div style={{ color: 'var(--terracotta)', fontSize: 13 }}>
               ❌ 出错：{message.error}
             </div>
+          ) : message.streaming && !message.content ? (
+            // 首字到达前：分阶段"思考中"动画，避免被当成卡住
+            <div className="cn-thinking" aria-live="polite">
+              <span className="cn-thinking-dots" aria-hidden>
+                <i />
+                <i />
+                <i />
+              </span>
+              <span className="cn-thinking-text">
+                {message.retrieval ? '已检索规范库，正在生成回答…' : '正在检索规范库…'}
+              </span>
+            </div>
           ) : (
             <div style={{ whiteSpace: 'pre-wrap' }}>
               {renderWithCitations(message.content, activeCite, onCiteClick)}
