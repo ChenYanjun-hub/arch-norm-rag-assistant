@@ -82,6 +82,53 @@ def _first_hit_rank(
     return None
 
 
+def _parse_also_accept(row: dict[str, str]) -> list[tuple[str, str]]:
+    """解析多值 GT 列 `also_accept`（同主题多规范都合法的题）。
+
+    格式：`spec|clause;spec|clause`（分号分隔多个备选，竖线分隔规范号与条文号）。
+    列缺失/为空 → 返回 []（向后兼容，旧评测集行为不变）。
+    """
+    raw = (row.get("also_accept") or "").strip()
+    if not raw:
+        return []
+    out: list[tuple[str, str]] = []
+    for part in raw.split(";"):
+        part = part.strip()
+        if not part:
+            continue
+        if "|" in part:
+            sp, cl = part.split("|", 1)
+        else:
+            sp, cl = part, ""
+        if sp.strip():
+            out.append((sp.strip(), cl.strip()))
+    return out
+
+
+def _best_hit_rank(
+    chunks: list[dict[str, Any]],
+    expected_spec: str,
+    expected_clause: str,
+    also_accept: list[tuple[str, str]],
+    *,
+    strict: bool,
+) -> int | None:
+    """主 GT + 各备选出处里，命中排名最靠前的 rank（多值 GT）。
+
+    任一合法出处命中即算命中，取最小 rank。备选为空时等价于原单值匹配。
+    """
+    ranks: list[int] = []
+    r = _first_hit_rank(chunks, expected_spec, expected_clause, strict=strict)
+    if r is not None:
+        ranks.append(r)
+    for sp, cl in also_accept:
+        # loose 只比 spec_code，clause 传空；strict 用备选自己的 clause
+        r = _first_hit_rank(chunks, sp, cl if strict else "", strict=strict)
+        if r is not None:
+            ranks.append(r)
+    return min(ranks) if ranks else None
+
+
 # ── 数据类 ──────────────────────────────────────────────────
 
 
@@ -276,11 +323,13 @@ def _run_one(
             elapsed_ms=elapsed_ms,
         )
 
-    rank_strict = _first_hit_rank(
-        chunks, expected_spec, expected_clause, strict=True
+    # 多值 GT：主 GT + also_accept 备选，任一命中即算命中（取最小 rank）
+    also_accept = _parse_also_accept(row)
+    rank_strict = _best_hit_rank(
+        chunks, expected_spec, expected_clause, also_accept, strict=True
     )
-    rank_loose = _first_hit_rank(
-        chunks, expected_spec, expected_clause, strict=False
+    rank_loose = _best_hit_rank(
+        chunks, expected_spec, expected_clause, also_accept, strict=False
     )
 
     return RowResult(
