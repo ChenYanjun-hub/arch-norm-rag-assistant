@@ -1,6 +1,10 @@
 // 单条聊天消息（cn-msg-user / cn-msg-card 设计语言）
 // 设计参考：claude design/pc-mock.jsx · UserMsg + AIMsg
 
+import { Children } from 'react'
+import ReactMarkdown, { type Components } from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+
 import type { ChatMessage as ChatMessageType, Citation } from '../types/chat'
 import { CitationCard } from './CitationCard'
 
@@ -63,6 +67,53 @@ function renderWithCitations(
     parts.push(text.slice(lastIndex))
   }
   return parts
+}
+
+/** Markdown 子节点里的纯文本仍要转成 [N] 引用 chip（守"可溯源"红线，不能被 md 渲染吃掉）*/
+function withCitations(
+  children: React.ReactNode,
+  activeCite?: number | null,
+  onCiteClick?: (n: number) => void,
+): React.ReactNode {
+  return Children.map(children, (child) =>
+    typeof child === 'string' ? renderWithCitations(child, activeCite, onCiteClick) : child,
+  )
+}
+
+/**
+ * react-markdown 组件映射：所有含文本的元素都过一遍 withCitations，
+ * 其余只挂 class 交给 design.css（保持内联样式最少、样式集中）。
+ */
+function mdComponents(
+  activeCite?: number | null,
+  onCiteClick?: (n: number) => void,
+): Components {
+  const t = (children: React.ReactNode) => withCitations(children, activeCite, onCiteClick)
+  return {
+    p: ({ children }) => <p className="cn-md-p">{t(children)}</p>,
+    li: ({ children }) => <li>{t(children)}</li>,
+    strong: ({ children }) => <strong>{t(children)}</strong>,
+    em: ({ children }) => <em>{t(children)}</em>,
+    h1: ({ children }) => <h3 className="cn-md-h">{t(children)}</h3>,
+    h2: ({ children }) => <h3 className="cn-md-h">{t(children)}</h3>,
+    h3: ({ children }) => <h3 className="cn-md-h">{t(children)}</h3>,
+    h4: ({ children }) => <h4 className="cn-md-h">{t(children)}</h4>,
+    blockquote: ({ children }) => <blockquote className="cn-md-quote">{children}</blockquote>,
+    td: ({ children }) => <td>{t(children)}</td>,
+    th: ({ children }) => <th>{t(children)}</th>,
+    // 表格可能超出消息宽度 → 独立横向滚动，不撑破布局
+    table: ({ children }) => (
+      <div className="cn-md-table-wrap">
+        <table className="cn-md-table">{children}</table>
+      </div>
+    ),
+    code: ({ children }) => <code className="cn-md-code">{children}</code>,
+    a: ({ href, children }) => (
+      <a href={href} target="_blank" rel="noopener noreferrer">
+        {children}
+      </a>
+    ),
+  }
 }
 
 export function ChatMessage({
@@ -251,8 +302,13 @@ export function ChatMessage({
               </span>
             </div>
           ) : (
-            <div style={{ whiteSpace: 'pre-wrap' }}>
-              {renderWithCitations(message.content, activeCite, onCiteClick)}
+            <div className="cn-md">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={mdComponents(activeCite, onCiteClick)}
+              >
+                {message.content}
+              </ReactMarkdown>
               {message.streaming && (
                 <span
                   style={{
