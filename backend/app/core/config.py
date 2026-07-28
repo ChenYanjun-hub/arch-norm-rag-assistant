@@ -126,6 +126,17 @@ QUERY_DECOMPOSE_TIMEOUT_SECONDS = float(os.getenv("QUERY_DECOMPOSE_TIMEOUT_SECON
 # 最多拆几个子问题（不含原 query）
 QUERY_DECOMPOSE_MAX_SUBQ = int(os.getenv("QUERY_DECOMPOSE_MAX_SUBQ", "4"))
 
+# 引用核验 verifier（agentic RAG · W7 agent 深化 ②）：默认关，守红线 1 不编造
+# 补规则式治理缺口：LLM verifier 核对答案里规范号/条文号/数字/强条是否真在 chunks 有据。
+# 第一版只检测不改写（自动改答案有风险，见 align_numbers 回滚·启示 62）→ 走 metadata + 提示。
+# 失败降级"未核验"（grounded=True），绝不阻塞主流程。
+ANSWER_VERIFY_ENABLED = os.getenv("ANSWER_VERIFY_ENABLED", "false").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+ANSWER_VERIFY_TIMEOUT_SECONDS = float(os.getenv("ANSWER_VERIFY_TIMEOUT_SECONDS", "6.0"))
+
 # Reranker 输入候选数（W3 D4 加）⚠️ 默认 20 = baseline
 # W3 D4 4 组合实验：
 #   ck=20, pf=text_only  : Hit@5 loose 50.0% (baseline)

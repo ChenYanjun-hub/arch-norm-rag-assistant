@@ -26,6 +26,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from app.core.config import (
+    ANSWER_VERIFY_ENABLED,
     HYBRID_BM25_TOP_K,
     HYBRID_ENABLED,
     MULTI_QUERY_ENABLED,
@@ -399,12 +400,21 @@ def run_rag_sync(
         or n_modal_corrections > 0
     )
 
+    # W7 agent ②：引用核验（默认关）— LLM verifier 核对规范号/条文号/数字/强条是否有据
+    # 补规则缺口（dangling 只查 [N] 角标、align 只校量词）；第一版只检测不改写 → 走 metadata。
+    grounding = {"grounded": True, "issues": [], "verified": False}
+    if ANSWER_VERIFY_ENABLED:
+        from app.rag.verifier import verify_grounding
+        _verify_target = aligned_answer if post_filter_touched else full_answer
+        grounding = verify_grounding(_verify_target, kept_payloads)
+
     # citations 在 done 之前下发，让前端可以"答案完→显示引用"
     yield {
         "type": "citations",
         "data": [_build_citation(p) for p in kept_payloads],
     }
     # W5 D4 + W6 D2 + W6 D4 + W7 D1：metadata 事件携带 dangling + post_filter 全链路信息
+    # W7 agent ②：+ grounding 核验结果（verified / ok / issues）
     yield {
         "type": "metadata",
         "data": {
@@ -415,6 +425,9 @@ def run_rag_sync(
             "post_filter_applied": post_filter_touched,
             "modal_verb_corrections": n_modal_corrections,
             "number_corrections": n_number_corrections,  # W7 D1 新增
+            "grounding_verified": grounding["verified"],
+            "grounding_ok": grounding["grounded"],
+            "grounding_issues": grounding["issues"],
         },
     }
     # W6 D2 + D4：revised_answer 事件 — 任何后处理生效时下发最终版（前端覆盖 / 评测优先消费）

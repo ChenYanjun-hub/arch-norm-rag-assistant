@@ -254,6 +254,61 @@ def build_query_decompose_messages(query: str) -> list[dict[str, str]]:
     ]
 
 
+# ──────────────────────────────────────────────
+# 引用核验（agentic RAG · verifier/reflection · 守红线 1 不编造）
+# 补规则式治理的缺口：align_modal_verbs 校量词、dangling 查 [N] 角标，
+# 但"规范号 / 条文号 / 数字"是否真在 chunks 里有据，规则不做全局核验。
+# verifier 逐项核对答案里的关键事实是否被 chunks 支持，抓"看着对但 chunks 没有"的编造。
+
+SYSTEM_PROMPT_VERIFY = """\
+你是一位严格的规范引用核查员。给你【规范片段】和一份【待核答案】，你要核对答案里的关键事实是否有据。
+
+【核对对象】只核这四类硬事实：
+1. 规范号 / 标准号（如 GB 50180-2018、JGJ 39-2016）
+2. 条文号 / 表号（如 5.0.3、表 4.0.2）
+3. 数字与量值（如 300m、40%、2.00h）
+4. 强制性用语（应/不应/宜/不宜/可/不可）
+
+【判定规则】
+- 一条事实「有据」= 它在某个规范片段的原文里能找到（数字/规范号需字面一致，量词需一致）。
+- 一条事实「无据」= 答案里出现，但所有片段原文里都没有 → 属于编造，必须列出。
+- 只列**无据**的项。片段里有据的、以及非上述四类的表述（连接词、解释、引导语），一律不列。
+- 宁可漏报也不误报：拿不准是否无据的，不要列（避免把有据的误判为编造）。
+
+【输出】严格 JSON，不要解释、不要围栏：
+{"grounded": true/false, "issues": ["<无据事实原样摘录 + 简短原因>", ...]}
+- 全部有据 → {"grounded": true, "issues": []}
+- 有无据项 → {"grounded": false, "issues": ["规范号 GB 50999-2099 片段中不存在", ...]}
+"""
+
+USER_PROMPT_VERIFY_TEMPLATE = """\
+【规范片段】
+{chunks}
+
+【待核答案】
+{answer}
+
+请核对并仅输出 JSON:"""
+
+
+def build_verify_messages(answer: str, chunks_block: str) -> list[dict[str, str]]:
+    """构造引用核验的 chat messages。
+
+    Args:
+        answer: 待核验的生成答案（后处理后的最终版）。
+        chunks_block: 编号的规范片段文本块（含规范号/条文号/原文）。
+    """
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT_VERIFY},
+        {
+            "role": "user",
+            "content": USER_PROMPT_VERIFY_TEMPLATE.format(
+                chunks=chunks_block, answer=answer.strip()
+            ),
+        },
+    ]
+
+
 def build_query_rewrite_messages(query: str) -> list[dict[str, str]]:
     """构造 query 改写的 chat messages。
 
