@@ -36,6 +36,7 @@ from app.core.config import (
     RERANK_ENABLED,
     RERANK_MIN_SCORE,
     RETRIEVAL_CONFIG,
+    TOOL_AGENT_ENABLED,
 )
 from app.core.prompts import (
     NO_RESULT_REPLY,
@@ -126,27 +127,66 @@ def run_rag_sync(
             query = rewritten
             raw_query = rewritten  # 场景识别也基于重写后的独立问题
 
-    # ── 场景识别短路（CLAUDE.md E.4 判定优先级，8 类全覆盖）──
+    # ── 场景识别（CLAUDE.md E.4 判定优先级，8 类全覆盖）──
+    # W7 agent ③：拆成「硬短路」与「软兜底」两段——
+    #   硬短路（空/超长/敏感/作废）：红线相关，必须最先拦，不给任何 agent 机会。
+    #   软兜底（闲聊/超范围/模糊）：延后到工具 agent 之后，因为"你收录了哪些消防规范"
+    #   这类元信息查询会被判成 ambiguous，但它其实可以被工具准确回答（实测确认）。
     scenario = detect_scenario(raw_query)
-    if scenario != "normal":
-        # 按 scenario 选 fallback 文案
+    _HARD_SHORTCUT = {"input_empty", "input_too_long", "sensitive", "deprecated"}
+    if scenario in _HARD_SHORTCUT:
         if scenario == "input_empty":
             reply = FALLBACK_INPUT_EMPTY
         elif scenario == "input_too_long":
             reply = FALLBACK_INPUT_TOO_LONG
         elif scenario == "sensitive":
             reply = FALLBACK_SENSITIVE
-        elif scenario == "deprecated":
+        else:  # deprecated
             deprecated_code = _detect_deprecated(query) or ""
             reply = build_fallback_deprecated(deprecated_code)
-        elif scenario == "chitchat":
+
+        for ch in reply:
+            yield {"type": "token", "data": ch}
+        yield {"type": "fallback", "data": scenario}
+        yield {
+            "type": "done",
+            "data": {"ttft_ms": 0, "total_ms": 0, "tokens_out": len(reply)},
+        }
+        return
+
+    # ── W7 agent ③：工具调用 Agent 前置路由（默认关）──────────────
+    # 查表/元信息类查询（目录导航/精确条文/现行状态）走工具作答；非查表类回退常规 RAG。
+    if TOOL_AGENT_ENABLED:
+        try:
+            from app.rag.tool_agent import run_tool_agent
+            tool_res = run_tool_agent(query)
+        except Exception as e:
+            logger.warning(f"[pipeline] tool_agent 异常，回退常规 RAG: {e}")
+            tool_res = {"used_tool": False, "answer": None, "tool_calls": []}
+        if tool_res.get("used_tool") and tool_res.get("answer"):
+            answer = tool_res["answer"]
+            for ch in answer:
+                yield {"type": "token", "data": ch}
+            yield {
+                "type": "metadata",
+                "data": {
+                    "tool_agent_used": True,
+                    "tool_calls": [t["name"] for t in tool_res.get("tool_calls", [])],
+                },
+            }
+            yield {
+                "type": "done",
+                "data": {"ttft_ms": 0, "total_ms": 0, "tokens_out": len(answer)},
+            }
+            return
+
+    # 软兜底（闲聊/超范围/模糊）：工具 agent 没接住才走
+    if scenario != "normal":
+        if scenario == "chitchat":
             reply = FALLBACK_CHITCHAT
         elif scenario == "out_of_scope":
             reply = FALLBACK_OUT_OF_SCOPE
-        elif scenario == "ambiguous":
-            reply = FALLBACK_AMBIGUOUS
-        else:
-            # 兜底防御：未知 scenario 走通用文案
+        else:  # ambiguous / 未知 scenario 兜底防御
             reply = FALLBACK_AMBIGUOUS
 
         for ch in reply:

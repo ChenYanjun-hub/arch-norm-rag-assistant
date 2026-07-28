@@ -137,6 +137,16 @@ ANSWER_VERIFY_ENABLED = os.getenv("ANSWER_VERIFY_ENABLED", "false").lower() in (
 )
 ANSWER_VERIFY_TIMEOUT_SECONDS = float(os.getenv("ANSWER_VERIFY_TIMEOUT_SECONDS", "6.0"))
 
+# 工具调用 Agent（agentic RAG · ReAct/function-calling · W7 agent 深化 ③）：默认关
+# 攻精确条文定位/目录导航/现行状态这类"查表/元信息"查询（向量检索弱）。
+# LLM 判断调哪个工具(spec_tools) → 拿结果作答；非查表类不调工具，回退常规 RAG。
+TOOL_AGENT_ENABLED = os.getenv("TOOL_AGENT_ENABLED", "false").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+TOOL_AGENT_TIMEOUT_SECONDS = float(os.getenv("TOOL_AGENT_TIMEOUT_SECONDS", "8.0"))
+
 # Reranker 输入候选数（W3 D4 加）⚠️ 默认 20 = baseline
 # W3 D4 4 组合实验：
 #   ck=20, pf=text_only  : Hit@5 loose 50.0% (baseline)
