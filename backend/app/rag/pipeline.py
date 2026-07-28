@@ -30,6 +30,7 @@ from app.core.config import (
     HYBRID_ENABLED,
     MULTI_QUERY_ENABLED,
     MULTI_QUERY_RRF_K,
+    QUERY_DECOMPOSE_ENABLED,
     RERANK_CANDIDATE_K,
     RERANK_ENABLED,
     RERANK_MIN_SCORE,
@@ -172,6 +173,22 @@ def run_rag_sync(
     else:
         queries = [query]
 
+    # ── W7 agent：查询分解（复合/发散题拆子问题各自检索再合并覆盖）──────
+    # 优先级：分解 > 改写。命中时走独立分解路径（子问题各自重排），跳过下方标准 RRF+重排。
+    # 价值在生成侧「答得全」：发散题单次检索只覆盖一个子话题，分解后覆盖全（实证见 devlog）。
+    decompose_used = False
+    decompose_subs: list[str] = []
+    if QUERY_DECOMPOSE_ENABLED:
+        try:
+            from app.rag.query_decomposer import decompose_query
+            _dq = decompose_query(query)
+            if len(_dq) > 1:
+                decompose_used = True
+                decompose_subs = _dq[1:]  # 去掉原 query，留子问题
+                logger.info(f"[pipeline] 查询分解: {len(decompose_subs)} 子问题")
+        except Exception as e:
+            logger.warning(f"[pipeline] 查询分解异常，降级不拆: {e}")
+
     # W3 D3：决定是否走 hybrid（BM25 + 向量）
     hybrid_used = False
     bm25_search_fn = None
@@ -183,94 +200,128 @@ def run_rag_sync(
         except ImportError as e:
             logger.warning(f"[pipeline] BM25 不可用，降级纯向量：{e}")
 
-    # 多 query 顺序 embed/search + 可选 BM25（Qdrant 锁不能并发）
-    # W3 D3 评测发现：BM25 跟 4 个变体都走（8 路融合）反而降 -2.6pp
-    # 根因：BM25 短语精确但相关性弱于 BGE-M3，等权重融合时挤掉好结果
-    # 修复：BM25 只跟原始 query 走 1 路（权重从 50% 降到 20%）
-    try:
-        results_per_path: list[list[dict[str, Any]]] = []
-        for i, q in enumerate(queries):
-            qvec = embed_one(q)
-            vec_r = search(
-                qvec,
-                top_k=top_k_rough * 2,  # 粗排放大 2× 补偿后续 dedup 损耗
+    if decompose_used:
+        # W7 分解路径：子问题各自 embed→search→**对子问题重排**→合并（覆盖各子话题）
+        # 关键：重排对子问题打分，不是对原复合 query（否则期望条仍排低位，实证见 devlog）
+        from app.rag.query_decomposer import retrieve_decomposed_chunks
+        try:
+            kept_payloads = retrieve_decomposed_chunks(
+                decompose_subs,
+                per_sub_top=2,
+                candidate_k=RERANK_CANDIDATE_K,
                 domain_filter=domain_filter,
                 spec_code_filter=spec_code_filter,
             )
-            results_per_path.append(vec_r)
-
-            # BM25 只对原始 query (i=0) 走一次，避免被 LLM 变体污染 + 权重过大
-            if i == 0 and bm25_search_fn is not None:
-                try:
-                    bm25_r = bm25_search_fn(
-                        q,
-                        top_k=HYBRID_BM25_TOP_K * 2,
-                        domain_filter=domain_filter,
-                        spec_code_filter=spec_code_filter,
-                    )
-                    results_per_path.append(bm25_r)
-                except Exception as e:
-                    logger.warning(f"[pipeline] BM25 search 失败，跳过本路：{e}")
-    except Exception as e:
-        logger.exception(f"[pipeline] embed/search 失败: {e}")
-        yield {"type": "error", "data": f"RETRIEVAL_FAILED: {e}"}
-        return
-
-    # RRF 融合（多路时走，单路直接用）
-    if len(results_per_path) > 1:
-        raw_results = rrf_fuse(
-            results_per_path,
-            k=MULTI_QUERY_RRF_K,
-            top_k=top_k_rough * 2,  # 留余量给 dedup
-        )
-    else:
-        raw_results = results_per_path[0] if results_per_path else []
-
-    # W3 D1：去掉 chunker _dN 后缀产生的 text 重复（同 spec_code + 同文本前缀）
-    # W3 D4：dedup 后保留 RERANK_CANDIDATE_K 条给 reranker（默认 30，原 20）
-    n_before_dedup = len(raw_results)
-    raw_results = dedup_results(raw_results)[:RERANK_CANDIDATE_K]
-
-    top_k_use = int(RETRIEVAL_CONFIG["top_k_rerank"])
-
-    # 决策点：是否走 Reranker 精排
-    rerank_used = False  # ★ 本次实际是否成功走 rerank（非 flag 状态）
-    if RERANK_ENABLED and raw_results:
-        try:
-            from app.rag.reranker import rerank
-            reranked = rerank(
-                query,
-                raw_results,
-                top_k=top_k_use,
-                min_score=RERANK_MIN_SCORE,
-            )
-            # rerank 后用 reranker 自己的阈值；保留向量 score 作为 fallback 判定的元数据
-            kept_payloads = [r["payload"] for r in reranked]
-            rerank_used = True
         except Exception as e:
-            logger.warning(f"[pipeline] rerank 失败，回退到 vector top-k：{e}")
-            kept_payloads = _select_relevant_chunks(
-                raw_results[:top_k_use], min_relevance
-            )
+            logger.exception(f"[pipeline] 分解检索失败: {e}")
+            yield {"type": "error", "data": f"RETRIEVAL_FAILED: {e}"}
+            return
+        rerank_used = True
+        yield {
+            "type": "retrieval",
+            "data": {
+                "n_candidates": len(kept_payloads),
+                "n_kept": len(kept_payloads),
+                "n_before_dedup": len(kept_payloads),
+                "min_relevance": min_relevance,
+                "reranked": True,
+                "multi_query": False,
+                "n_queries": len(decompose_subs) + 1,
+                "hybrid": False,
+                "n_paths": len(decompose_subs),
+                "rerank_candidate_k": RERANK_CANDIDATE_K,
+                "decomposed": True,  # ★ W7 分解透明度
+            },
+        }
     else:
-        # 未启用 reranker：用向量相关性阈值过滤
-        kept_payloads = _select_relevant_chunks(raw_results[:top_k_use], min_relevance)
+        # 多 query 顺序 embed/search + 可选 BM25（Qdrant 锁不能并发）
+        # W3 D3 评测发现：BM25 跟 4 个变体都走（8 路融合）反而降 -2.6pp
+        # 根因：BM25 短语精确但相关性弱于 BGE-M3，等权重融合时挤掉好结果
+        # 修复：BM25 只跟原始 query 走 1 路（权重从 50% 降到 20%）
+        try:
+            results_per_path: list[list[dict[str, Any]]] = []
+            for i, q in enumerate(queries):
+                qvec = embed_one(q)
+                vec_r = search(
+                    qvec,
+                    top_k=top_k_rough * 2,  # 粗排放大 2× 补偿后续 dedup 损耗
+                    domain_filter=domain_filter,
+                    spec_code_filter=spec_code_filter,
+                )
+                results_per_path.append(vec_r)
 
-    yield {
-        "type": "retrieval",
-        "data": {
-            "n_candidates": len(raw_results),
-            "n_kept": len(kept_payloads),
-            "n_before_dedup": n_before_dedup,  # ★ W3 D1 dedup 透明度
-            "min_relevance": min_relevance,
-            "reranked": rerank_used,  # ★ 实际状态，非 flag
-            "multi_query": multi_query_used,  # ★ W3 D2 multi-query 透明度
-            "n_queries": len(queries),
-            "hybrid": hybrid_used,  # ★ W3 D3 hybrid 透明度
-            "n_paths": len(results_per_path),  # 实际走了多少路（含 BM25）
-            "rerank_candidate_k": RERANK_CANDIDATE_K,  # ★ W3 D4 候选范围透明度
-        },
-    }
+                # BM25 只对原始 query (i=0) 走一次，避免被 LLM 变体污染 + 权重过大
+                if i == 0 and bm25_search_fn is not None:
+                    try:
+                        bm25_r = bm25_search_fn(
+                            q,
+                            top_k=HYBRID_BM25_TOP_K * 2,
+                            domain_filter=domain_filter,
+                            spec_code_filter=spec_code_filter,
+                        )
+                        results_per_path.append(bm25_r)
+                    except Exception as e:
+                        logger.warning(f"[pipeline] BM25 search 失败，跳过本路：{e}")
+        except Exception as e:
+            logger.exception(f"[pipeline] embed/search 失败: {e}")
+            yield {"type": "error", "data": f"RETRIEVAL_FAILED: {e}"}
+            return
+
+        # RRF 融合（多路时走，单路直接用）
+        if len(results_per_path) > 1:
+            raw_results = rrf_fuse(
+                results_per_path,
+                k=MULTI_QUERY_RRF_K,
+                top_k=top_k_rough * 2,  # 留余量给 dedup
+            )
+        else:
+            raw_results = results_per_path[0] if results_per_path else []
+
+        # W3 D1：去掉 chunker _dN 后缀产生的 text 重复（同 spec_code + 同文本前缀）
+        # W3 D4：dedup 后保留 RERANK_CANDIDATE_K 条给 reranker（默认 30，原 20）
+        n_before_dedup = len(raw_results)
+        raw_results = dedup_results(raw_results)[:RERANK_CANDIDATE_K]
+
+        top_k_use = int(RETRIEVAL_CONFIG["top_k_rerank"])
+
+        # 决策点：是否走 Reranker 精排
+        rerank_used = False  # ★ 本次实际是否成功走 rerank（非 flag 状态）
+        if RERANK_ENABLED and raw_results:
+            try:
+                from app.rag.reranker import rerank
+                reranked = rerank(
+                    query,
+                    raw_results,
+                    top_k=top_k_use,
+                    min_score=RERANK_MIN_SCORE,
+                )
+                # rerank 后用 reranker 自己的阈值；保留向量 score 作为 fallback 判定的元数据
+                kept_payloads = [r["payload"] for r in reranked]
+                rerank_used = True
+            except Exception as e:
+                logger.warning(f"[pipeline] rerank 失败，回退到 vector top-k：{e}")
+                kept_payloads = _select_relevant_chunks(
+                    raw_results[:top_k_use], min_relevance
+                )
+        else:
+            # 未启用 reranker：用向量相关性阈值过滤
+            kept_payloads = _select_relevant_chunks(raw_results[:top_k_use], min_relevance)
+
+        yield {
+            "type": "retrieval",
+            "data": {
+                "n_candidates": len(raw_results),
+                "n_kept": len(kept_payloads),
+                "n_before_dedup": n_before_dedup,  # ★ W3 D1 dedup 透明度
+                "min_relevance": min_relevance,
+                "reranked": rerank_used,  # ★ 实际状态，非 flag
+                "multi_query": multi_query_used,  # ★ W3 D2 multi-query 透明度
+                "n_queries": len(queries),
+                "hybrid": hybrid_used,  # ★ W3 D3 hybrid 透明度
+                "n_paths": len(results_per_path),  # 实际走了多少路（含 BM25）
+                "rerank_candidate_k": RERANK_CANDIDATE_K,  # ★ W3 D4 候选范围透明度
+            },
+        }
 
     if not kept_payloads:
         logger.warning(f"[pipeline] 检索无结果（min_relevance={min_relevance}）→ 兜底")

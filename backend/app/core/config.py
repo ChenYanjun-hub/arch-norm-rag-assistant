@@ -112,6 +112,20 @@ MULTI_QUERY_MAX_VARIANTS = int(os.getenv("MULTI_QUERY_MAX_VARIANTS", "3"))
 # RRF 融合的 k 常数（业界标准 60）
 MULTI_QUERY_RRF_K = int(os.getenv("MULTI_QUERY_RRF_K", "60"))
 
+# 查询分解（agentic RAG · W7 agent 深化）：默认关，评测验证后再决定
+# 攻复合/发散问题（综合域 strict 33%）：LLM 把"A和B的要求"拆成子问题各自检索再融合。
+# 与 multi_query（同问题换说法·提召回）互补：分解是多问题各自检索·提覆盖。
+# 复用 pipeline 多路 RRF 机制；单一问题不拆（零额外检索）；失败降级 [原 query]。
+QUERY_DECOMPOSE_ENABLED = os.getenv("QUERY_DECOMPOSE_ENABLED", "false").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+# 分解超时：超过降级不拆（保 TTFT SLA）
+QUERY_DECOMPOSE_TIMEOUT_SECONDS = float(os.getenv("QUERY_DECOMPOSE_TIMEOUT_SECONDS", "4.0"))
+# 最多拆几个子问题（不含原 query）
+QUERY_DECOMPOSE_MAX_SUBQ = int(os.getenv("QUERY_DECOMPOSE_MAX_SUBQ", "4"))
+
 # Reranker 输入候选数（W3 D4 加）⚠️ 默认 20 = baseline
 # W3 D4 4 组合实验：
 #   ck=20, pf=text_only  : Hit@5 loose 50.0% (baseline)

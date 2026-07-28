@@ -219,6 +219,7 @@ def _run_one(
     use_dedup: bool,
     use_multi_query: bool,
     use_hybrid: bool,
+    use_decompose: bool = False,
     rerank_candidate_k: int = 30,
     passage_format: str = "clause_text",
     rrf_k: int = 60,
@@ -234,8 +235,12 @@ def _run_one(
 
     t0 = time.time()
     try:
-        # W3 D2：query 改写（攻 BGE-M3 语义偏）
-        if use_multi_query:
+        # 多路 query 来源（互斥优先级：分解 > 改写 > 单 query）
+        # W7：查询分解（攻复合/发散题覆盖）；W3 D2：query 改写（攻 BGE-M3 语义偏）
+        if use_decompose:
+            from app.rag.query_decomposer import decompose_query
+            queries = decompose_query(query)  # 单一/失败时仅含原 query
+        elif use_multi_query:
             queries = rewrite_query(query)  # 失败时仅含原 query
         else:
             queries = [query]
@@ -386,6 +391,11 @@ def main() -> None:
         help="关闭 hybrid 检索（BM25 + 向量 RRF 融合），方便对比",
     )
     parser.add_argument(
+        "--decompose",
+        action="store_true",
+        help="W7 agent：开启查询分解（复合/发散题拆子问题各自检索再融合）",
+    )
+    parser.add_argument(
         "--rerank-candidate-k",
         type=int,
         default=20,
@@ -411,11 +421,13 @@ def main() -> None:
     use_dedup = not args.no_dedup
     use_multi_query = not args.no_multi_query
     use_hybrid = not args.no_hybrid
+    use_decompose = args.decompose
     label = (
         f"rerank_{'on' if use_rerank else 'off'}"
         f"_dedup_{'on' if use_dedup else 'off'}"
         f"_mq_{'on' if use_multi_query else 'off'}"
         f"_hyb_{'on' if use_hybrid else 'off'}"
+        f"{'_decomp' if use_decompose else ''}"
         f"_ck{args.rerank_candidate_k}"
         f"_pf-{args.passage_format}"
     )
@@ -442,6 +454,7 @@ def main() -> None:
         f"dedup={use_dedup} "
         f"multi_query={use_multi_query} "
         f"hybrid={use_hybrid} "
+        f"decompose={use_decompose} "
         f"candidate_k={args.rerank_candidate_k} "
         f"passage_format={args.passage_format} "
         f"(rrf_k={args.rrf_k})\n"
@@ -458,6 +471,7 @@ def main() -> None:
             use_dedup=use_dedup,
             use_multi_query=use_multi_query,
             use_hybrid=use_hybrid,
+            use_decompose=use_decompose,
             rerank_candidate_k=args.rerank_candidate_k,
             passage_format=args.passage_format,
             rrf_k=args.rrf_k,
@@ -532,6 +546,7 @@ def main() -> None:
                     "use_dedup": use_dedup,
                     "use_multi_query": use_multi_query,
                     "use_hybrid": use_hybrid,
+                    "use_decompose": use_decompose,
                     "rerank_candidate_k": args.rerank_candidate_k,
                     "passage_format": args.passage_format,
                     "rrf_k": args.rrf_k,
