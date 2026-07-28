@@ -885,3 +885,39 @@
 @media (prefers-reduced-motion: no-preference) {
   .cn-msg-row { animation: cn-msg-in 0.28s ease both; }
 }
+
+/* ── W7 agent 能力可见化（分解 / 工具 / 核验）────────────────── */
+.cn-agent-tag { color: var(--primary); }
+
+/* 查询分解：展示拆出的子问题，让"答得全"可见 */
+.cn-agent-trace {
+  margin-bottom: 12px; padding: 9px 11px;
+  background: var(--primary-soft);
+  border: 1px solid var(--primary-line);
+  border-radius: 8px;
+}
+.cn-agent-trace-head {
+  font-size: 11px; color: var(--primary);
+  letter-spacing: 0.04em; margin-bottom: 7px;
+}
+.cn-agent-trace-chips { display: flex; flex-direction: column; gap: 5px; }
+.cn-agent-subq {
+  font-size: 12.5px; color: var(--ink-soft);
+  background: var(--paper); border: 1px solid var(--primary-line);
+  border-radius: 6px; padding: 5px 9px; line-height: 1.5;
+}
+
+/* 引用核验告警：无据项显式列出（守不编造红线的可见性）*/
+.cn-agent-warn {
+  margin-bottom: 12px; padding: 9px 11px;
+  background: rgba(191, 138, 44, 0.07);
+  border: 1px solid var(--amber); border-radius: 8px;
+}
+.cn-agent-warn-head {
+  font-size: 11.5px; color: var(--amber);
+  font-weight: 600; margin-bottom: 6px;
+}
+.cn-agent-warn-list {
+  margin: 0; padding-left: 18px;
+  font-size: 12.5px; color: var(--ink-soft); line-height: 1.65;
+}

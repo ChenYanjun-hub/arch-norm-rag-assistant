@@ -24,7 +24,9 @@ function renderWithCitations(
 ): React.ReactNode[] {
   const parts: React.ReactNode[] = []
   let lastIndex = 0
-  const re = /\[(\d+)\]/g
+  // 仅匹配 1-2 位脚标号，与后端 dangling 检测口径一致（W5 D5）：
+  // 避免把「建标[2015]273号」这类年号/文号误渲染成可点引用角标。
+  const re = /\[(\d{1,2})\]/g
   let m: RegExpExecArray | null
   let key = 0
   while ((m = re.exec(text)) !== null) {
@@ -138,6 +140,49 @@ export function ChatMessage({
               </span>
             </>
           )}
+          {/* W7 agent①：查询分解 */}
+          {message.retrieval?.decomposed && (
+            <>
+              <span>·</span>
+              <span className="cn-agent-tag" title="复合/发散问题已拆成子问题，各自检索后合并，保证答得全">
+                ⑂ 已拆解{' '}
+                <span style={{ fontFamily: 'var(--font-mono)' }}>
+                  {message.retrieval.sub_queries?.length ?? 0}
+                </span>{' '}
+                问
+              </span>
+            </>
+          )}
+          {/* W7 agent③：工具调用 */}
+          {message.meta?.tool_agent_used && (
+            <>
+              <span>·</span>
+              <span className="cn-agent-tag" title="查表/元信息类问题由工具直接查询作答，不走向量检索">
+                ⚒ 工具 {message.meta.tool_calls?.join(' / ')}
+              </span>
+            </>
+          )}
+          {/* W7 agent②：引用核验 */}
+          {message.meta?.grounding_verified && (
+            <>
+              <span>·</span>
+              {message.meta.grounding_ok ? (
+                <span
+                  style={{ color: 'var(--status-active)' }}
+                  title="已逐项核对答案中的规范号/条文号/数字是否有据"
+                >
+                  ✓ 引用已核验
+                </span>
+              ) : (
+                <span
+                  style={{ color: 'var(--amber)' }}
+                  title={message.meta.grounding_issues?.join('；')}
+                >
+                  ⚑ {message.meta.grounding_issues?.length ?? 0} 处待核
+                </span>
+              )}
+            </>
+          )}
           {message.fallback && (
             <span style={{ color: 'var(--amber)' }}>● 兜底场景 · {message.fallback}</span>
           )}
@@ -157,6 +202,38 @@ export function ChatMessage({
         </div>
 
         <div className="cn-msg-card">
+          {/* W7 agent①：展示拆出的子问题（让"答得全"这件事可见）*/}
+          {message.retrieval?.decomposed &&
+            (message.retrieval.sub_queries?.length ?? 0) > 0 && (
+              <div className="cn-agent-trace">
+                <div className="cn-agent-trace-head">已拆解为子问题，分别检索后合并</div>
+                <div className="cn-agent-trace-chips">
+                  {message.retrieval.sub_queries!.map((sq, i) => (
+                    <span key={i} className="cn-agent-subq">
+                      <span style={{ fontFamily: 'var(--font-mono)', opacity: 0.6 }}>
+                        {i + 1}
+                      </span>{' '}
+                      {sq}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+          {/* W7 agent②：核验发现无据项 → 显式告警（守"不编造"红线的可见性）*/}
+          {message.meta?.grounding_verified &&
+            !message.meta.grounding_ok &&
+            (message.meta.grounding_issues?.length ?? 0) > 0 && (
+              <div className="cn-agent-warn">
+                <div className="cn-agent-warn-head">⚑ 引用核验发现待核项</div>
+                <ul className="cn-agent-warn-list">
+                  {message.meta.grounding_issues!.map((iss, i) => (
+                    <li key={i}>{iss}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
           {message.error ? (
             <div style={{ color: 'var(--terracotta)', fontSize: 13 }}>
               ❌ 出错：{message.error}

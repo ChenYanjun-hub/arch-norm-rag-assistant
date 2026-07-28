@@ -25,6 +25,10 @@ export interface RetrievalMeta {
   n_candidates: number
   n_kept: number
   min_relevance: number
+  /** W7 agent①：本轮是否走了查询分解（复合/发散题拆子问题各自检索）*/
+  decomposed?: boolean
+  /** W7 agent①：拆出的子问题（供 UI 展示"拆成了哪几问"）*/
+  sub_queries?: string[]
 }
 
 /** 性能元信息（done 事件载荷） */
@@ -36,15 +40,26 @@ export interface DoneMeta {
 
 /** W5 D4 + W6 D2 + W6 D4 + W7 D1：pipeline 元数据（dangling + post_filter 矩阵 3 层） */
 export interface PipelineMeta {
-  dangling_count: number
-  n_citations_in_answer: number
-  n_chunks_available: number
+  /** 下列三项仅常规 RAG 路径下发；工具 Agent 路径不检索，故为可选 */
+  dangling_count?: number
+  n_citations_in_answer?: number
+  n_chunks_available?: number
   post_filter_stripped_chars?: number
   post_filter_applied?: boolean
   /** W6 D4：量词对齐校正次数（"宜/应/不应"被改回 chunks 原词的次数）*/
   modal_verb_corrections?: number
   /** W7 D1：数字对齐校正次数（"300m/35%"被改回 chunks 原值的次数）*/
   number_corrections?: number
+  /** W7 agent②：引用核验 verifier 是否成功跑了（失败/超时为 false）*/
+  grounding_verified?: boolean
+  /** W7 agent②：核验结论 —— 答案里规范号/条文号/数字是否全部有据 */
+  grounding_ok?: boolean
+  /** W7 agent②：无据（疑似编造）项摘录 */
+  grounding_issues?: string[]
+  /** W7 agent③：本轮是否由工具调用 Agent 作答（查表/元信息类查询）*/
+  tool_agent_used?: boolean
+  /** W7 agent③：实际调用的工具名 */
+  tool_calls?: string[]
 }
 
 /** SSE 事件类型 */

@@ -272,6 +272,7 @@ def run_rag_sync(
                 "n_paths": len(decompose_subs),
                 "rerank_candidate_k": RERANK_CANDIDATE_K,
                 "decomposed": True,  # ★ W7 分解透明度
+                "sub_queries": decompose_subs,  # ★ 前端展示"拆成了哪几问"
             },
         }
     else:
