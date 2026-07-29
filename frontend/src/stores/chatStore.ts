@@ -5,7 +5,7 @@
 //   - 持久化只在「回合边界」落盘（done/error/切换/删除/新建），避免逐 token 写 localStorage。
 
 import { create } from 'zustand'
-import type { ChatMessage, Conversation } from '../types/chat'
+import type { ChatMessage, Conversation, Project } from '../types/chat'
 import { streamChat } from '../lib/apiClient'
 
 const STORAGE_KEY = 'jjg-conversations-v1'
@@ -14,12 +14,19 @@ const STORAGE_KEY = 'jjg-conversations-v1'
 interface PersistShape {
   conversations: Conversation[]
   activeId: string | null
+  /** W7：项目工作区 */
+  projects: Project[]
+  activeProjectId: string | null
 }
 
 interface ChatState {
   conversations: Conversation[]
   activeId: string | null
   isStreaming: boolean
+  /** W7：项目列表（localStorage 持久化，MVP 不做账号故不入后端）*/
+  projects: Project[]
+  /** 当前选中的项目：过滤历史列表 + 新会话继承 + 提供预设规范限定 */
+  activeProjectId: string | null
   /** 用户提问，触发 SSE 流（无 activeId 时惰性新建会话）*/
   send: (query: string, opts?: { domain?: string; spec_codes?: string[] }) => Promise<void>
   /** 新建对话：回到空态，首次发送时才真正建会话（避免空会话堆积）*/
@@ -28,6 +35,14 @@ interface ChatState {
   switchConversation: (id: string) => void
   /** 删除指定会话 */
   deleteConversation: (id: string) => void
+  /** W7：新建项目 */
+  createProject: (name: string, city?: string) => void
+  /** W7：选中/取消选中项目（传 null 取消）*/
+  selectProject: (id: string | null) => void
+  /** W7：删除项目（其下会话不删，仅解除归属，避免误删用户历史）*/
+  deleteProject: (id: string) => void
+  /** W7：设置项目的预设规范限定 */
+  setProjectSpecs: (id: string, specCodes: string[]) => void
 }
 
 function newId() {
@@ -52,17 +67,22 @@ function sanitizeConversation(c: Conversation): Conversation {
 function loadPersisted(): PersistShape {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return { conversations: [], activeId: null }
+    if (!raw) return { conversations: [], activeId: null, projects: [], activeProjectId: null }
     const parsed = JSON.parse(raw) as Partial<PersistShape>
     const conversations = (parsed.conversations ?? []).map(sanitizeConversation)
     const activeId = parsed.activeId ?? null
-    // activeId 必须指向仍存在的会话，否则置空
+    // W7：老版本 localStorage 没有 projects 字段 → 缺省空数组（向后兼容，不清历史）
+    const projects = parsed.projects ?? []
+    const activeProjectId = parsed.activeProjectId ?? null
+    // activeId / activeProjectId 必须指向仍存在的对象，否则置空
     return {
       conversations,
       activeId: conversations.some((c) => c.id === activeId) ? activeId : null,
+      projects,
+      activeProjectId: projects.some((p) => p.id === activeProjectId) ? activeProjectId : null,
     }
   } catch {
-    return { conversations: [], activeId: null }
+    return { conversations: [], activeId: null, projects: [], activeProjectId: null }
   }
 }
 
@@ -72,6 +92,8 @@ function savePersisted(state: PersistShape): void {
     const payload: PersistShape = {
       conversations: state.conversations,
       activeId: state.activeId,
+      projects: state.projects,
+      activeProjectId: state.activeProjectId,
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
   } catch {
@@ -85,6 +107,53 @@ export const useChatStore = create<ChatState>((set, get) => ({
   conversations: initial.conversations,
   activeId: initial.activeId,
   isStreaming: false,
+  projects: initial.projects,
+  activeProjectId: initial.activeProjectId,
+
+  createProject: (name, city) => {
+    const n = name.trim()
+    if (!n) return
+    const project: Project = {
+      id: newId(),
+      name: n,
+      city: city?.trim() || undefined,
+      specCodes: [],
+      createdAt: Date.now(),
+    }
+    const projects = [project, ...get().projects]
+    // 新建后自动选中 + 退出当前会话：否则会"在新项目里提问却续到了项目外的旧会话上"
+    // （实测发现的 bug：只切 activeProjectId 不清 activeId，新问答不会归入该项目）
+    set({ projects, activeProjectId: project.id, activeId: null })
+    savePersisted(get())
+  },
+
+  selectProject: (id) => {
+    if (get().isStreaming) return
+    if (id !== null && !get().projects.some((p) => p.id === id)) return
+    // 切项目时退出当前会话，回到该项目的空态（避免"选了项目却还停在别的项目会话里"）
+    set({ activeProjectId: id, activeId: null })
+    savePersisted(get())
+  },
+
+  deleteProject: (id) => {
+    if (get().isStreaming) return
+    const projects = get().projects.filter((p) => p.id !== id)
+    // 只解除归属，不删会话——用户的问答历史比项目分组更宝贵
+    const conversations = get().conversations.map((c) =>
+      c.projectId === id ? { ...c, projectId: null } : c,
+    )
+    const activeProjectId = get().activeProjectId === id ? null : get().activeProjectId
+    set({ projects, conversations, activeProjectId })
+    savePersisted(get())
+  },
+
+  setProjectSpecs: (id, specCodes) => {
+    const projects = get().projects.map((p) =>
+      p.id === id ? { ...p, specCodes: [...specCodes] } : p,
+    )
+    set({ projects })
+    savePersisted(get())
+  },
 
   newConversation: () => {
     if (get().isStreaming) return
@@ -104,7 +173,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const conversations = get().conversations.filter((c) => c.id !== id)
     const activeId = get().activeId === id ? null : get().activeId
     set({ conversations, activeId })
-    savePersisted({ conversations, activeId })
+    // 必须落盘完整 state：早期这里传的是 {conversations, activeId} 局部对象，
+    // 加入 projects 后会把项目整个抹掉（TS 类型检查抓到）
+    savePersisted(get())
   },
 
   async send(query, opts) {
@@ -153,6 +224,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         messages: [userMsg, assistantMsg],
         createdAt: Date.now(),
         updatedAt: Date.now(),
+        // W7：新会话归属当前选中项目
+        projectId: get().activeProjectId,
       }
       // 新会话置顶
       set({ conversations: [conv, ...get().conversations], activeId: convId, isStreaming: true })
@@ -173,11 +246,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }))
     }
 
+    // W7：项目预设规范限定。
+    // 规则：**手动选了规范就用手动的，没手动选才用项目预设**——
+    // 避免用户在侧栏取消了限定却因项目预设而"取消不掉"，控制权始终在用户手上。
+    const proj = get().projects.find(
+      (p) => p.id === (existing?.projectId ?? get().activeProjectId),
+    )
+    const effectiveOpts =
+      opts?.spec_codes?.length || !proj?.specCodes.length
+        ? opts
+        : { ...opts, spec_codes: proj.specCodes }
+
     try {
       for await (const evt of streamChat({
         query: trimmed,
         history: history.length ? history : undefined,
-        ...opts,
+        ...effectiveOpts,
       })) {
         switch (evt.type) {
           case 'retrieval':

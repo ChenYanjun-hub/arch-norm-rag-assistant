@@ -111,6 +111,21 @@ export interface ChatTurn {
   content: string
 }
 
+/**
+ * W7：项目工作区 —— 规划师按项目组织查询。
+ * 项目不只是分组标签，更是**预设的规范过滤集**：
+ * 同一个问题在深圳和在哈尔滨，适用的地标与气候区参数不同。
+ */
+export interface Project {
+  id: string
+  name: string
+  /** 城市 / 地区（备注用，决定该带哪些地标）*/
+  city?: string
+  /** 预设规范限定：该项目下提问默认只查这些规范（复用已有 spec_code 多选检索）*/
+  specCodes: string[]
+  createdAt: number
+}
+
 /** V2-3：一段完整会话（localStorage 持久化单元）*/
 export interface Conversation {
   id: string
@@ -119,6 +134,8 @@ export interface Conversation {
   messages: ChatMessage[]
   createdAt: number
   updatedAt: number
+  /** W7：所属项目（新建会话时继承当前选中项目）；null/缺省 = 未归档到任何项目 */
+  projectId?: string | null
 }
 
 /** chat 请求体 */

@@ -2,12 +2,20 @@
 // 规范分类计数从 GET /api/stats 动态读取（接口未就绪时回退默认值）
 
 import { useState } from 'react'
-import type { Conversation, CorpusStats, SpecBrief } from '../types/chat'
+import type { Conversation, CorpusStats, Project, SpecBrief } from '../types/chat'
 
 interface Props {
   onNewChat?: () => void
   /** 语料统计（动态计数）；null 时用回退默认值 */
   stats?: CorpusStats | null
+  /** W7：项目工作区 */
+  projects?: Project[]
+  activeProjectId?: string | null
+  onSelectProject?: (id: string | null) => void
+  onCreateProject?: (name: string) => void
+  onDeleteProject?: (id: string) => void
+  /** 把当前选中的规范限定存为该项目的默认范围 */
+  onSetProjectSpecs?: (id: string, specCodes: string[]) => void
   /** V2-3：历史会话列表 */
   conversations?: Conversation[]
   /** 当前激活会话 id */
@@ -72,6 +80,12 @@ const FALLBACK_DOMAINS = [
 export function Sidebar({
   onNewChat,
   stats,
+  projects = [],
+  activeProjectId = null,
+  onSelectProject,
+  onCreateProject,
+  onDeleteProject,
+  onSetProjectSpecs,
   conversations = [],
   activeId = null,
   onSelectConversation,
@@ -83,6 +97,13 @@ export function Sidebar({
   const totalSpecs = stats?.total_specs ?? 39
   const [openDomains, setOpenDomains] = useState<Record<string, boolean>>({})
   const [showAllHistory, setShowAllHistory] = useState(false)
+  const [creatingProject, setCreatingProject] = useState(false)
+  const [newProjName, setNewProjName] = useState('')
+
+  // 选中项目时，历史列表只显示该项目下的会话
+  const visibleConversations = activeProjectId
+    ? conversations.filter((c) => c.projectId === activeProjectId)
+    : conversations
 
   return (
     <aside
@@ -189,16 +210,126 @@ export function Sidebar({
           </div>
         </div>
 
+        {/* W7 项目工作区：项目 = 会话分组 + 预设规范限定 */}
         <div className="cn-side-section">
           <div className="cn-side-section-title">
-            <span>历史会话</span>
-            <span style={{ fontSize: 10 }}>{conversations.length}</span>
+            <span>项目工作区</span>
+            <button
+              className="cn-proj-add"
+              onClick={() => setCreatingProject((v) => !v)}
+              title="新建项目"
+              aria-label="新建项目"
+            >
+              ＋
+            </button>
           </div>
-          {conversations.length === 0 ? (
-            <div className="cn-hist-empty">暂无历史 · 提问后自动保存到本地</div>
+
+          {creatingProject && (
+            <div className="cn-proj-new">
+              <input
+                className="cn-proj-input"
+                autoFocus
+                placeholder="项目名称，回车创建"
+                value={newProjName}
+                onChange={(e) => setNewProjName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newProjName.trim()) {
+                    onCreateProject?.(newProjName)
+                    setNewProjName('')
+                    setCreatingProject(false)
+                  } else if (e.key === 'Escape') {
+                    setNewProjName('')
+                    setCreatingProject(false)
+                  }
+                }}
+                maxLength={30}
+              />
+            </div>
+          )}
+
+          {projects.length === 0 ? (
+            !creatingProject && (
+              <div className="cn-hist-empty">
+                暂无项目 · 建项目可按工程分组问答、预设规范范围
+              </div>
+            )
           ) : (
             <div>
-              {(showAllHistory ? conversations : conversations.slice(0, HISTORY_PREVIEW_N)).map((c) => (
+              {projects.map((p) => {
+                const n = conversations.filter((c) => c.projectId === p.id).length
+                const isActive = p.id === activeProjectId
+                return (
+                  <div
+                    key={p.id}
+                    className={'cn-proj-item' + (isActive ? ' is-active' : '')}
+                    // 再次点击已选中的项目 = 取消选中（回到"全部"）
+                    onClick={() => onSelectProject?.(isActive ? null : p.id)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        onSelectProject?.(isActive ? null : p.id)
+                      }
+                    }}
+                    title={
+                      p.specCodes.length
+                        ? `${p.name} · 已预设 ${p.specCodes.length} 部规范限定`
+                        : p.name
+                    }
+                  >
+                    <span className="cn-side-icon" aria-hidden>
+                      {isActive ? '📂' : '📁'}
+                    </span>
+                    <span className="cn-hist-title">{p.name}</span>
+                    {p.specCodes.length > 0 && (
+                      <span className="cn-proj-specs" title={`预设 ${p.specCodes.length} 部规范`}>
+                        ⛬{p.specCodes.length}
+                      </span>
+                    )}
+                    <span className="cn-proj-count">{n}</span>
+                    {isActive && activeSpecCodes.length > 0 && (
+                      <button
+                        className="cn-proj-save"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onSetProjectSpecs?.(p.id, activeSpecCodes)
+                        }}
+                        title={`把当前限定的 ${activeSpecCodes.length} 部规范存为本项目默认范围`}
+                        aria-label="存为本项目规范范围"
+                      >
+                        ⛬存
+                      </button>
+                    )}
+                    <button
+                      className="cn-hist-del"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onDeleteProject?.(p.id)
+                      }}
+                      aria-label={`删除项目：${p.name}（其下会话保留）`}
+                    >
+                      ×
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="cn-side-section">
+          <div className="cn-side-section-title">
+            <span>{activeProjectId ? '本项目会话' : '历史会话'}</span>
+            <span style={{ fontSize: 10 }}>{visibleConversations.length}</span>
+          </div>
+          {visibleConversations.length === 0 ? (
+            <div className="cn-hist-empty">
+              {activeProjectId ? '本项目暂无会话 · 在此提问自动归入该项目' : '暂无历史 · 提问后自动保存到本地'}
+            </div>
+          ) : (
+            <div>
+              {(showAllHistory ? visibleConversations : visibleConversations.slice(0, HISTORY_PREVIEW_N)).map((c) => (
                 <div
                   key={c.id}
                   className={'cn-hist-item' + (c.id === activeId ? ' is-active' : '')}
@@ -230,14 +361,14 @@ export function Sidebar({
                   </button>
                 </div>
               ))}
-              {conversations.length > HISTORY_PREVIEW_N && (
+              {visibleConversations.length > HISTORY_PREVIEW_N && (
                 <button
                   className="cn-hist-more"
                   onClick={() => setShowAllHistory((v) => !v)}
                 >
                   {showAllHistory
                     ? '收起 ↑'
-                    : `查看全部 (${conversations.length}) →`}
+                    : `查看全部 (${visibleConversations.length}) →`}
                 </button>
               )}
             </div>

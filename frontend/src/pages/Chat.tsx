@@ -84,6 +84,13 @@ export function ChatPage() {
   const newConversation = useChatStore((s) => s.newConversation)
   const switchConversation = useChatStore((s) => s.switchConversation)
   const deleteConversation = useChatStore((s) => s.deleteConversation)
+  // W7 项目工作区
+  const projects = useChatStore((s) => s.projects)
+  const activeProjectId = useChatStore((s) => s.activeProjectId)
+  const selectProject = useChatStore((s) => s.selectProject)
+  const createProject = useChatStore((s) => s.createProject)
+  const deleteProject = useChatStore((s) => s.deleteProject)
+  const setProjectSpecs = useChatStore((s) => s.setProjectSpecs)
 
   const [activeCite, setActiveCite] = useState<number | null>(null)
   const [stats, setStats] = useState<CorpusStats | null>(null)
@@ -145,7 +152,13 @@ export function ChatPage() {
   const lastAssistantId = lastAssistant?.id ?? null
 
   // 本次回答时间：消息无时间戳，用当前会话 updatedAt（每次消息更新都会刷新，口径准确）
-  const lastAnswerAt = conversations.find((c) => c.id === activeId)?.updatedAt ?? 0
+  const activeConv = conversations.find((c) => c.id === activeId)
+  const lastAnswerAt = activeConv?.updatedAt ?? 0
+
+  // 顶栏项目标签：已有会话看它归属哪个项目；空态看当前选中的项目
+  const currentProject = projects.find(
+    (p) => p.id === (activeConv ? activeConv.projectId : activeProjectId),
+  )
 
   const userQueryTitle =
     [...messages].reverse().find((m) => m.role === 'user')?.content?.slice(0, 50) ??
@@ -171,6 +184,12 @@ export function ChatPage() {
       <Sidebar
         onNewChat={newConversation}
         stats={stats}
+        projects={projects}
+        activeProjectId={activeProjectId}
+        onSelectProject={selectProject}
+        onCreateProject={createProject}
+        onDeleteProject={deleteProject}
+        onSetProjectSpecs={setProjectSpecs}
         conversations={conversations}
         activeId={activeId}
         onSelectConversation={switchConversation}
@@ -214,6 +233,22 @@ export function ChatPage() {
                 />
                 MVP 体验
               </span>
+              {/* W7：当前会话所属项目（会话已归档时看会话的，空态看当前选中的）*/}
+              {currentProject && (
+                <span
+                  className="cn-topbar-pill cn-proj-pill"
+                  title={
+                    currentProject.specCodes.length
+                      ? `项目「${currentProject.name}」· 已预设 ${currentProject.specCodes.length} 部规范限定`
+                      : `项目「${currentProject.name}」`
+                  }
+                >
+                  <span
+                    style={{ width: 5, height: 5, borderRadius: 50, background: 'currentColor' }}
+                  />
+                  {currentProject.name}
+                </span>
+              )}
             </div>
             <div className="cn-topbar-sub">
               {citations.length > 0 ? (
