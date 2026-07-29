@@ -112,11 +112,16 @@ MULTI_QUERY_MAX_VARIANTS = int(os.getenv("MULTI_QUERY_MAX_VARIANTS", "3"))
 # RRF 融合的 k 常数（业界标准 60）
 MULTI_QUERY_RRF_K = int(os.getenv("MULTI_QUERY_RRF_K", "60"))
 
-# 查询分解（agentic RAG · W7 agent 深化）：默认关，评测验证后再决定
+# 查询分解（agentic RAG · W7 agent 深化）：⭐ W7 Router 后改为默认开
 # 攻复合/发散问题（综合域 strict 33%）：LLM 把"A和B的要求"拆成子问题各自检索再融合。
 # 与 multi_query（同问题换说法·提召回）互补：分解是多问题各自检索·提覆盖。
 # 复用 pipeline 多路 RRF 机制；单一问题不拆（零额外检索）；失败降级 [原 query]。
-QUERY_DECOMPOSE_ENABLED = os.getenv("QUERY_DECOMPOSE_ENABLED", "false").lower() in (
+#
+# 为何此前默认关、现在可以开：分解要对每条 query 加一次 LLM 判定（~1.5s），
+# 无差别开会压 TTFT SLA。W7 加了 Agent Router（规则路由 ~0ms、零成本）后，
+# 只有被判为发散/复合的 query 才付这个成本，简单题零额外开销 → 成本可承受。
+# 路由评测：decompose 召回 100%、漏触发 0%（docs/devlog/2026-W7_agent_router.md）
+QUERY_DECOMPOSE_ENABLED = os.getenv("QUERY_DECOMPOSE_ENABLED", "true").lower() in (
     "1",
     "true",
     "yes",
@@ -126,7 +131,12 @@ QUERY_DECOMPOSE_TIMEOUT_SECONDS = float(os.getenv("QUERY_DECOMPOSE_TIMEOUT_SECON
 # 最多拆几个子问题（不含原 query）
 QUERY_DECOMPOSE_MAX_SUBQ = int(os.getenv("QUERY_DECOMPOSE_MAX_SUBQ", "4"))
 
-# 引用核验 verifier（agentic RAG · W7 agent 深化 ②）：默认关，守红线 1 不编造
+# 引用核验 verifier（agentic RAG · W7 agent 深化 ②）：默认关（W7 Router 后仍暂缓）
+# ⚠️ 与 tool/decompose 不同，verifier 不适合默认开：它对**每个答案**都要加一次核验调用
+#    （Router 无法帮它省——核验的对象是"生成结果"，不是"查询类型"），
+#    且第一版只检测不修复（见 align_numbers 回滚·启示 62），性价比最低。
+#    上线前置条件：① 加触发条件（仅数字/规范号密度高或检索相关度低时核验）
+#                  ② 或做成"检测→打回重生成"闭环，让这次调用产生实际修复价值。
 # 补规则式治理缺口：LLM verifier 核对答案里规范号/条文号/数字/强条是否真在 chunks 有据。
 # 第一版只检测不改写（自动改答案有风险，见 align_numbers 回滚·启示 62）→ 走 metadata + 提示。
 # 失败降级"未核验"（grounded=True），绝不阻塞主流程。
@@ -137,10 +147,14 @@ ANSWER_VERIFY_ENABLED = os.getenv("ANSWER_VERIFY_ENABLED", "false").lower() in (
 )
 ANSWER_VERIFY_TIMEOUT_SECONDS = float(os.getenv("ANSWER_VERIFY_TIMEOUT_SECONDS", "6.0"))
 
-# 工具调用 Agent（agentic RAG · ReAct/function-calling · W7 agent 深化 ③）：默认关
+# 工具调用 Agent（agentic RAG · ReAct/function-calling · W7 agent 深化 ③）：⭐ Router 后默认开
 # 攻精确条文定位/目录导航/现行状态这类"查表/元信息"查询（向量检索弱）。
 # LLM 判断调哪个工具(spec_tools) → 拿结果作答；非查表类不调工具，回退常规 RAG。
-TOOL_AGENT_ENABLED = os.getenv("TOOL_AGENT_ENABLED", "false").lower() in (
+#
+# 为何可以默认开：Router 对该类查询的判定是 100% 召回 / 100% 精确
+# （规范号+条文号、规范号+状态问法、目录问法都是强信号），误触发 0，
+# 简单内容查询根本不会进这条路径 → 零额外成本。
+TOOL_AGENT_ENABLED = os.getenv("TOOL_AGENT_ENABLED", "true").lower() in (
     "1",
     "true",
     "yes",
