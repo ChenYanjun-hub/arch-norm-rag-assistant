@@ -24,6 +24,8 @@ function fmtDateTime(ts: number): string {
 function citationToMd(c: Citation, i: number): string {
   const tags: string[] = []
   if (c.is_mandatory) tags.push('**强制性条文**')
+  // 公式 OCR 易损：报告里也要标，否则交付物丢了这条风险提示
+  if (c.has_formula) tags.push('含计算公式（摘引可能不完整，请核对原文 PDF）')
   const status = c.status ?? '现行'
   if (status !== '现行') {
     tags.push(`⚠️ **${status}**${c.replaced_by ? `，现行替代：${c.replaced_by}` : ''}`)

@@ -1104,3 +1104,9 @@
 .cn-search-more {
   font-size: 10.5px; color: var(--sidebar-text-mute); padding: 4px 16px;
 }
+/* 含计算公式提示：公式 OCR 易损，引导查原文 PDF（不渲染损坏公式）*/
+.cn-badge-formula {
+  background: rgba(74, 108, 148, 0.12);
+  color: var(--indigo, #4a6c94);
+  cursor: help;
+}

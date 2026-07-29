@@ -35,7 +35,7 @@ const STATUS_META: Record<SpecStatus, { cls: string; label: string; color: strin
 
 export function CitationCard({ index, citation, active, onClick }: Props) {
   const {
-    spec_name, spec_code, clause, page, is_mandatory, original_text, domain,
+    spec_name, spec_code, clause, page, is_mandatory, original_text, domain, has_formula,
     status, replaced_by, status_note,
   } = citation
   const stMeta = STATUS_META[status ?? '现行'] ?? STATUS_META['现行']
@@ -63,6 +63,14 @@ export function CitationCard({ index, citation, active, onClick }: Props) {
           <span>条文出处</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
             {is_mandatory && <span className="cn-badge is-partial">强制性</span>}
+            {has_formula && (
+              <span
+                className="cn-badge cn-badge-formula"
+                title="本条含计算公式。公式在 PDF 提取中易损坏，摘引可能不完整，请以原文 PDF 为准"
+              >
+                含公式·查原文
+              </span>
+            )}
             <span className={`cn-badge ${stMeta.cls}`}>{stMeta.label}</span>
           </span>
         </div>

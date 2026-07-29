@@ -44,6 +44,7 @@ class Citation(BaseModel):
     clause: str = Field(..., description="条文号，如 表 5.0.3 或 第 4.2.3 条")
     page: int | None = Field(None, description="PDF 页码（用于跳转）")
     is_mandatory: bool = Field(False, description="是否强制性条文")
+    has_formula: bool = Field(False, description="本条含计算公式，前端提示以原文 PDF 为准")
     original_text: str = Field(..., max_length=200, description="原文摘引，建议 ≤ 50 字")
     domain: str = Field("", description="规范类别，如 规划/建筑/景观/消防/结构/市政")
     # 规范现行状态（默认"现行"，例外登记在 services/spec_status.py；🔴 状态不臆断）

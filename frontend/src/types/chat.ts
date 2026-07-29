@@ -10,6 +10,8 @@ export interface Citation {
   clause: string
   page: number | null
   is_mandatory: boolean
+  /** W7：本条含计算公式 —— 公式 OCR 普遍损坏，不渲染，提示看原文 PDF */
+  has_formula?: boolean
   original_text: string
   domain: string
   /** 规范现行状态（缺省视为"现行"）*/

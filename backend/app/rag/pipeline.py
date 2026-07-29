@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Iterator
 from typing import Any
 
@@ -71,17 +72,30 @@ def _select_relevant_chunks(
     return [r["payload"] for r in raw if r["score"] >= min_relevance]
 
 
+# 计算公式信号（W7）：显式"按下式/下列公式计算"或"式(x.x.x)"编号引用。
+# 保守口径——实测 109/10785 命中（1.01%），抽样零误报。
+_FORMULA_SIGNAL_RE = re.compile(
+    r"按下式计算|按下列公式计算|应按下式|式\s*[（(]\s*\d+\.\d+"
+)
+
+
 def _build_citation(chunk_payload: dict[str, Any]) -> dict[str, Any]:
     """从 chunk payload 抽取引用元数据（对应 schemas.Citation）。"""
     spec_code = chunk_payload.get("spec_code", "")
+    text = chunk_payload.get("text") or ""
     return {
         "spec_name": chunk_payload.get("spec_name", ""),
         "spec_code": spec_code,
         "clause": chunk_payload.get("clause", ""),
         "page": chunk_payload.get("page_start") or chunk_payload.get("page"),
         "is_mandatory": bool(chunk_payload.get("is_mandatory", False)),
-        "original_text": (chunk_payload.get("text") or "")[:200],
+        "original_text": text[:200],
         "domain": chunk_payload.get("domain", ""),
+        # W7：本条含计算公式 → 前端提示以原文 PDF 为准。
+        # 不渲染公式本身：PDF 数学公式的 OCR 提取普遍损坏（实测"AADT= (4.5.4)"
+        # 等号右侧整段丢失、字符错乱），把损坏公式渲染得像模像样反而诱导误用，
+        # 直接违红线 1（不编造）/ 红线 2（引用精确）。诚实做法是引导看原文。
+        "has_formula": bool(_FORMULA_SIGNAL_RE.search(text)),
         # 规范现行状态（默认现行，例外见 services/spec_status）→ status/replaced_by/status_note
         **get_spec_status(spec_code),
     }
