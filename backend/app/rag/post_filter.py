@@ -21,6 +21,7 @@
 
 from __future__ import annotations
 
+import difflib
 import re
 
 
@@ -178,11 +179,56 @@ def _match_chars_head(s1: str, s2: str) -> int:
 _DIRECTION_CHARS = {"大", "小", "高", "低", "多", "少", "长", "短"}
 
 
+# 引号内内容（中英文双引号 / 直角引号），用于识别"引述用户提问"的片段
+_QUOTED_RE = re.compile(r'[“"「『]([^”"」』\n]{4,})[”"」』]')
+
+
+def find_query_echo_spans(
+    answer: str,
+    query: str,
+    *,
+    min_ratio: float = 0.90,
+) -> list[tuple[int, int]]:
+    """找出 answer 中「引号内 + 与用户 query 高度重合」的区间 —— 即**引述用户提问**的部分。
+
+    为什么需要（2026-W7 实测 bug）：
+        用户问"服务半径**不应**大于多少米"，LLM 答"未查询到'服务半径不应大于多少米'的直接依据"，
+        align_modal_verbs 按 chunks 把这里的"不应"校正成了"宜"——**改的是用户的提问，不是规范陈述**，
+        读起来像助手听错了问题。为守红线 3 而生的后处理器，在错误语境下自己改坏了量词。
+
+    为什么要「引号 + 高相似度」双条件（只用其一都不够）：
+        - 只看相似度：会误伤"答案恰好与提问用词相同的规范陈述"
+          （问"绿地率不应低于多少" → 答"居住区绿地率不应低于30%"，这句该被校正）。
+        - 只看引号：答案里引用**规范原文**也带引号，那些恰恰**需要**与 chunks 对齐。
+
+    min_ratio=0.90 的依据（在 1802 条存档评测答案上实测，不是拍脑袋）：
+        引号内含量词、且与 query 相似度 ≥0.6 的候选共 14 条，分布出现干净断层——
+          · 0.98：唯一一条**真·引述用户提问**（Q001）
+          · ≤0.79：其余 13 条全是**引用规范原文**（因提问就是围绕该条文，用词自然重合）
+        取 0.90 恰好切在断层上：修好真 bug，且不挡住那 13 条的红线校正。
+        方向上宁可漏保护、不可误保护——误保护会拦下红线 3 的量词校正（有害），
+        漏保护只是退回原行为（无新增伤害）。
+
+    Returns:
+        [(start, end), ...] answer 中受保护、不参与量词校正的字符区间。
+    """
+    q = (query or "").strip()
+    if not q or not answer:
+        return []
+    spans: list[tuple[int, int]] = []
+    for m in _QUOTED_RE.finditer(answer):
+        inner = m.group(1)
+        if difflib.SequenceMatcher(None, q, inner).ratio() >= min_ratio:
+            spans.append((m.start(1), m.end(1)))
+    return spans
+
+
 def align_modal_verbs(
     answer: str,
     chunks_texts: list[str],
     *,
     min_match_chars: int = 5,
+    query: str | None = None,
 ) -> tuple[str, int]:
     """W6 D4：自动校正 answer 中的量词使其与 chunks 一致。
 
@@ -190,11 +236,14 @@ def align_modal_verbs(
     - 只在 prefix tail + suffix head 至少匹配 min_match_chars 字时改
     - 方向词不一致（如"大" vs "小"）跳过，避免产出"宜小于"荒谬词
     - 防止误伤 LLM 总结句、概括陈述
+    - W7：跳过"引述用户提问"的片段（见 find_query_echo_spans），避免改坏用户的问题
 
     Args:
         answer: LLM 完整输出
         chunks_texts: 检索到的 chunks 原文列表
         min_match_chars: prefix + suffix 至少匹配多少字才认为是"同一规范条文"
+        query: 用户原始问题（可选）。传入后会保护答案中"引述该问题"的片段不被校正；
+            不传则行为与 W6 D4 完全一致（向后兼容）。
 
     Returns:
         (aligned_answer, n_corrections)：校正后 + 改动数
@@ -214,9 +263,17 @@ def align_modal_verbs(
     # 2. 从 answer 提取量词锚点
     answer_anchors = _extract_modal_anchors(answer)
 
+    # 2.5 保护"引述用户提问"的片段：这些不是规范陈述，改了等于篡改用户的问题
+    protected = find_query_echo_spans(answer, query or "")
+
+    def _is_protected(pos: int) -> bool:
+        return any(s <= pos < e for s, e in protected)
+
     # 3. 对每个 answer anchor，找 chunks 中最匹配的
     corrections: list[tuple[int, str, str]] = []  # (pos, old_verb, new_verb)
     for a_pos, a_prefix, a_verb, a_suffix in answer_anchors:
+        if _is_protected(a_pos):
+            continue
         best_match = 0
         best_chunk_verb: str | None = None
         for c_prefix, c_verb, c_suffix in chunks_anchors:

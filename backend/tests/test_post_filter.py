@@ -32,6 +32,7 @@ from app.rag.post_filter import (
     detect_number_diffs,
     detect_supplementary_sections,
     strip_supplementary_sections,
+    find_query_echo_spans,
 )
 
 
@@ -516,3 +517,60 @@ class TestAlignNumbersChainWithModal(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+# ── W7：引述用户提问的片段不参与量词校正 ──────────────────────
+class TestQueryEchoGuard(unittest.TestCase):
+    """align_modal_verbs 不应改坏"答案里复述用户问题"的量词（2026-W7 实测 bug）。"""
+
+    CHUNKS = ["3.1.3 托儿所、幼儿园的服务半径宜为300m~500m。"]
+
+    def test_real_bug_case_quoted_question_protected(self):
+        # 实测 bug：用户问"不应大于"，答案引述该问题，此处不得被校正成"宜"
+        query = "居住区配套幼儿园的服务半径不应大于多少米？"
+        answer = '未在现行规范库中查询到“居住区配套幼儿园的服务半径不应大于多少米”的直接依据。'
+        out, n = align_modal_verbs(answer, self.CHUNKS, query=query)
+        self.assertIn("不应大于多少米", out)  # 用户的问法被保留
+        self.assertEqual(n, 0)
+
+    def test_norm_statement_still_corrected(self):
+        # 反向：非引述的规范陈述仍要被校正（不能因为加守卫就整体失效）
+        query = "幼儿园服务半径要求"
+        answer = "托儿所、幼儿园的服务半径应为300m~500m。"
+        out, n = align_modal_verbs(answer, self.CHUNKS, query=query)
+        self.assertEqual(n, 1)
+        self.assertIn("服务半径宜为300m~500m", out)
+
+    def test_quoted_but_not_similar_to_query_still_corrected(self):
+        # 引号内是"规范原文"而非用户问题 → 仍应对齐（只有引号条件不够）
+        query = "无障碍坡道的设计要求"
+        answer = '规范规定：“托儿所、幼儿园的服务半径应为300m~500m。”'
+        _out, n = align_modal_verbs(answer, self.CHUNKS, query=query)
+        self.assertEqual(n, 1)
+
+    def test_backward_compatible_without_query(self):
+        # 不传 query → 行为与 W6 D4 完全一致
+        answer = "托儿所、幼儿园的服务半径应为300m~500m。"
+        self.assertEqual(
+            align_modal_verbs(answer, self.CHUNKS),
+            align_modal_verbs(answer, self.CHUNKS, query=None),
+        )
+
+
+class TestFindQueryEchoSpans(unittest.TestCase):
+    def test_empty_inputs(self):
+        self.assertEqual(find_query_echo_spans("", "q"), [])
+        self.assertEqual(find_query_echo_spans("some answer", ""), [])
+
+    def test_detects_echo(self):
+        q = "居住区绿地率的下限要求是多少"
+        a = '未查询到“居住区绿地率的下限要求是多少”的依据'
+        spans = find_query_echo_spans(a, q)
+        self.assertEqual(len(spans), 1)
+        s, e = spans[0]
+        self.assertEqual(a[s:e], "居住区绿地率的下限要求是多少")
+
+    def test_ignores_unrelated_quote(self):
+        q = "防火墙的耐火极限"
+        a = '规范规定：“绿地率不应低于30%，且应设置集中绿地。”'
+        self.assertEqual(find_query_echo_spans(a, q), [])

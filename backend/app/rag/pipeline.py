@@ -445,7 +445,10 @@ def run_rag_sync(
 
     # W6 D4：在 strip 后继续 align modal verbs（"宜/应/不应/不宜" 等量词与 chunks 对齐）
     chunks_texts = [(p.get("text") or "") for p in kept_payloads]
-    aligned_answer, n_modal_corrections = align_modal_verbs(cleaned_answer, chunks_texts)
+    # W7：传 query，保护答案中"引述用户提问"的片段不被量词校正（实测 bug 修复）
+    aligned_answer, n_modal_corrections = align_modal_verbs(
+        cleaned_answer, chunks_texts, query=query
+    )
     if n_modal_corrections > 0:
         logger.info(
             f"[pipeline] align_modal_verbs corrected {n_modal_corrections} 个量词（"
