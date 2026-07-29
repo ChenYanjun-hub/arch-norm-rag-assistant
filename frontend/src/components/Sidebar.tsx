@@ -100,10 +100,48 @@ export function Sidebar({
   const [creatingProject, setCreatingProject] = useState(false)
   const [newProjName, setNewProjName] = useState('')
 
+  const [search, setSearch] = useState('')
+
   // 选中项目时，历史列表只显示该项目下的会话
   const visibleConversations = activeProjectId
     ? conversations.filter((c) => c.projectId === activeProjectId)
     : conversations
+
+  // ── 搜索：跨「对话正文 / 项目 / 规范」三类，纯前端即时过滤 ──
+  const q = search.trim().toLowerCase()
+  const searching = q.length > 0
+  const searchHits = (() => {
+    if (!searching) return null
+    const hitProjects = projects.filter((p) => p.name.toLowerCase().includes(q))
+    // 对话：标题命中，或任一条消息正文命中（后者才是"我上次问过这个"的真实用法）
+    const hitConversations = conversations
+      .map((c) => {
+        const inTitle = c.title.toLowerCase().includes(q)
+        const msg = c.messages.find((m) => (m.content || '').toLowerCase().includes(q))
+        if (!inTitle && !msg) return null
+        // 命中片段：截取匹配位置前后各 12 字，让用户看清命中在哪
+        let snippet = ''
+        if (msg) {
+          const text = msg.content
+          const i = text.toLowerCase().indexOf(q)
+          snippet =
+            (i > 12 ? '…' : '') +
+            text.slice(Math.max(0, i - 12), i + q.length + 12).replace(/\n/g, ' ')
+        }
+        return { conv: c, snippet }
+      })
+      .filter((x): x is { conv: Conversation; snippet: string } => x !== null)
+    // 规范：跨所有域的规范名 / 规范号
+    const allSpecs: SpecBrief[] = domains.flatMap(
+      (d) => (d as { specs?: SpecBrief[] }).specs ?? [],
+    )
+    const hitSpecs = allSpecs.filter(
+      (s) =>
+        s.spec_name.toLowerCase().includes(q) ||
+        s.spec_code.toLowerCase().replace(/\s/g, '').includes(q.replace(/\s/g, '')),
+    )
+    return { hitProjects, hitConversations, hitSpecs }
+  })()
 
   return (
     <aside
@@ -133,7 +171,125 @@ export function Sidebar({
         <span className="cn-kbd">⌘N</span>
       </button>
 
+      <div className="cn-search">
+        <span className="cn-search-icon" aria-hidden>⌕</span>
+        <input
+          className="cn-search-input"
+          placeholder="搜索条文 / 对话 / 项目"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setSearch('')
+          }}
+          aria-label="搜索条文、对话或项目"
+        />
+        {searching && (
+          <button className="cn-search-clear" onClick={() => setSearch('')} aria-label="清空搜索">
+            ×
+          </button>
+        )}
+      </div>
+
       <div className="cn-scroll cn-scroll-dark" style={{ flex: 1, padding: '6px 0 16px' }}>
+        {/* 搜索态：结果替换常规分区，避免上下并列造成混淆 */}
+        {searching && searchHits && (
+          <div className="cn-side-section">
+            <div className="cn-side-section-title">
+              <span>搜索结果</span>
+              <span style={{ fontSize: 10 }}>
+                {searchHits.hitProjects.length +
+                  searchHits.hitConversations.length +
+                  searchHits.hitSpecs.length}
+              </span>
+            </div>
+
+            {searchHits.hitProjects.length === 0 &&
+            searchHits.hitConversations.length === 0 &&
+            searchHits.hitSpecs.length === 0 ? (
+              <div className="cn-hist-empty">无匹配 · 试试规范号、关键词或项目名</div>
+            ) : (
+              <>
+                {searchHits.hitProjects.length > 0 && (
+                  <div className="cn-search-group">
+                    <div className="cn-search-group-title">项目</div>
+                    {searchHits.hitProjects.map((p) => (
+                      <div
+                        key={p.id}
+                        className="cn-proj-item"
+                        onClick={() => {
+                          onSelectProject?.(p.id)
+                          setSearch('')
+                        }}
+                        role="button"
+                        tabIndex={0}
+                      >
+                        <span className="cn-side-icon" aria-hidden>📁</span>
+                        <span className="cn-hist-title">{p.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {searchHits.hitConversations.length > 0 && (
+                  <div className="cn-search-group">
+                    <div className="cn-search-group-title">对话</div>
+                    {searchHits.hitConversations.map(({ conv, snippet }) => (
+                      <div
+                        key={conv.id}
+                        className="cn-search-conv"
+                        onClick={() => {
+                          onSelectConversation?.(conv.id)
+                          setSearch('')
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        title={conv.title}
+                      >
+                        <div className="cn-search-conv-title">{conv.title}</div>
+                        {snippet && <div className="cn-search-conv-snip">{snippet}</div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {searchHits.hitSpecs.length > 0 && (
+                  <div className="cn-search-group">
+                    <div className="cn-search-group-title">规范（点击限定检索范围）</div>
+                    {searchHits.hitSpecs.slice(0, 8).map((sp) => (
+                      <div
+                        key={sp.spec_code}
+                        className={
+                          'cn-spec-row' +
+                          (activeSpecCodes.includes(sp.spec_code) ? ' is-active' : '')
+                        }
+                        onClick={() => onSelectSpec?.(sp)}
+                        role="button"
+                        tabIndex={0}
+                        title={`${sp.spec_name} ${sp.spec_code}`}
+                      >
+                        <span
+                          className="cn-spec-dot"
+                          style={{ background: STATUS_COLOR[sp.status] ?? STATUS_COLOR['现行'] }}
+                        />
+                        <span className="cn-spec-name">{sp.spec_name}</span>
+                        <span className="cn-spec-code">{sp.spec_code}</span>
+                      </div>
+                    ))}
+                    {searchHits.hitSpecs.length > 8 && (
+                      <div className="cn-search-more">
+                        还有 {searchHits.hitSpecs.length - 8} 部…请补充关键词
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* 非搜索态：常规三分区 */}
+        {!searching && (
+          <>
         <div className="cn-side-section">
           <div className="cn-side-section-title">
             <span>规范分类</span>
@@ -374,6 +530,8 @@ export function Sidebar({
             </div>
           )}
         </div>
+          </>
+        )}
       </div>
 
       <div

@@ -1061,3 +1061,46 @@
   padding: 0 2px; flex: 0 0 auto; opacity: 0; transition: opacity .14s;
 }
 .cn-proj-item:hover .cn-proj-save { opacity: 1; }
+
+/* ── W7 侧栏搜索（条文 / 对话 / 项目）──────────────────────── */
+.cn-search {
+  display: flex; align-items: center; gap: 6px;
+  margin: 0 12px 8px; padding: 6px 9px;
+  background: var(--sidebar-soft); border: 1px solid var(--sidebar-line);
+  border-radius: 8px;
+}
+.cn-search:focus-within { border-color: var(--primary); }
+.cn-search-icon { color: var(--sidebar-text-mute); font-size: 13px; flex: 0 0 auto; }
+.cn-search-input {
+  flex: 1; min-width: 0; background: transparent; border: none; outline: none;
+  color: var(--sidebar-text); font-size: 12px; font-family: inherit;
+}
+.cn-search-input::placeholder { color: var(--sidebar-text-mute); }
+.cn-search-clear {
+  background: transparent; border: none; cursor: pointer;
+  color: var(--sidebar-text-mute); font-size: 14px; line-height: 1; padding: 0 2px;
+}
+.cn-search-clear:hover { color: var(--sidebar-text); }
+
+.cn-search-group { margin-bottom: 10px; }
+.cn-search-group-title {
+  font-size: 10px; color: var(--sidebar-text-mute);
+  letter-spacing: 0.08em; padding: 4px 16px 3px;
+}
+.cn-search-conv {
+  padding: 6px 16px; margin: 1px 6px; border-radius: 6px; cursor: pointer;
+  transition: background .14s;
+}
+.cn-search-conv:hover { background: var(--sidebar-soft); }
+.cn-search-conv-title {
+  font-size: 12.5px; color: var(--sidebar-text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* 命中片段：让用户看清"命中在正文哪里" */
+.cn-search-conv-snip {
+  font-size: 11px; color: var(--sidebar-text-mute); margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cn-search-more {
+  font-size: 10.5px; color: var(--sidebar-text-mute); padding: 4px 16px;
+}
