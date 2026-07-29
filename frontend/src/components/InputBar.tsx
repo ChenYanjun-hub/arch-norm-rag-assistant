@@ -69,7 +69,7 @@ export function InputBar({
           className="cn-input-field"
           rows={2}
           value={value}
-          maxLength={500}
+          maxLength={4000}
           disabled={disabled}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => {
@@ -98,7 +98,7 @@ export function InputBar({
             @ 引用条文
           </button>
           <div style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--ink-faint)' }}>
-            <span style={{ fontFamily: 'var(--font-mono)' }}>{value.length}</span> / 500
+            <span style={{ fontFamily: 'var(--font-mono)' }}>{value.length}</span> / 4000
           </div>
           <button
             className="cn-input-send"

@@ -23,7 +23,7 @@ class Turn(BaseModel):
 class ChatRequest(BaseModel):
     """POST /api/chat 请求体。"""
 
-    query: str = Field(..., min_length=1, max_length=500, description="用户问题")
+    query: str = Field(..., min_length=1, max_length=4000, description="用户问题")
     session_id: str | None = Field(None, description="会话 ID（V2 多轮用）")
     domain: str | None = Field(
         None, description="可选 domain 限定（规划/建筑/景观/消防）"

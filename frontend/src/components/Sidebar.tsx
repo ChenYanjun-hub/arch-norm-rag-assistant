@@ -41,6 +41,27 @@ const STATUS_COLOR: Record<string, string> = {
 }
 
 // 接口未就绪时的回退（与入库实测一致），避免首屏闪空
+/** 历史会话默认展示条数，超出折叠到「查看全部」*/
+const HISTORY_PREVIEW_N = 6
+
+/** 相对时间：刚刚 / 今天 HH:MM / 昨天 / 前天 / M月D日 */
+function formatRelTime(ts: number): string {
+  if (!ts) return ''
+  const now = new Date()
+  const d = new Date(ts)
+  const diffMin = Math.floor((now.getTime() - ts) / 60000)
+  if (diffMin < 1) return '刚刚'
+  if (diffMin < 60) return `${diffMin} 分钟前`
+  // 按"自然日"差判断今天/昨天/前天（不能用 24h 整除，跨零点会算错）
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
+  const dayDiff = Math.round((startOfDay(now) - startOfDay(d)) / 86400000)
+  const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  if (dayDiff === 0) return hhmm
+  if (dayDiff === 1) return '昨天'
+  if (dayDiff === 2) return '前天'
+  return `${d.getMonth() + 1}月${d.getDate()}日`
+}
+
 const FALLBACK_DOMAINS = [
   { domain: '规划', spec_count: 18 },
   { domain: '建筑', spec_count: 11 },
@@ -61,6 +82,7 @@ export function Sidebar({
   const domains = stats?.domains ?? FALLBACK_DOMAINS
   const totalSpecs = stats?.total_specs ?? 39
   const [openDomains, setOpenDomains] = useState<Record<string, boolean>>({})
+  const [showAllHistory, setShowAllHistory] = useState(false)
 
   return (
     <aside
@@ -176,7 +198,7 @@ export function Sidebar({
             <div className="cn-hist-empty">暂无历史 · 提问后自动保存到本地</div>
           ) : (
             <div>
-              {conversations.map((c) => (
+              {(showAllHistory ? conversations : conversations.slice(0, HISTORY_PREVIEW_N)).map((c) => (
                 <div
                   key={c.id}
                   className={'cn-hist-item' + (c.id === activeId ? ' is-active' : '')}
@@ -195,6 +217,7 @@ export function Sidebar({
                     💬
                   </span>
                   <span className="cn-hist-title">{c.title}</span>
+                  <span className="cn-hist-time">{formatRelTime(c.updatedAt)}</span>
                   <button
                     className="cn-hist-del"
                     onClick={(e) => {
@@ -207,6 +230,16 @@ export function Sidebar({
                   </button>
                 </div>
               ))}
+              {conversations.length > HISTORY_PREVIEW_N && (
+                <button
+                  className="cn-hist-more"
+                  onClick={() => setShowAllHistory((v) => !v)}
+                >
+                  {showAllHistory
+                    ? '收起 ↑'
+                    : `查看全部 (${conversations.length}) →`}
+                </button>
+              )}
             </div>
           )}
         </div>

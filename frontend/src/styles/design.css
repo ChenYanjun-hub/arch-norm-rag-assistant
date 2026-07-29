@@ -961,3 +961,55 @@
   color: var(--ink); white-space: nowrap;
 }
 .cn-md-table tr:nth-child(even) td { background: rgba(0, 0, 0, 0.012); }
+
+/* ── 强制性用语分级高亮（红线 3 可视化 · 与后端 MODAL_VERBS 同一套定义）──── */
+.cn-modal {
+  background: transparent;
+  color: inherit;
+  padding: 0 1px;
+  border-radius: 2px;
+  font-weight: 600;
+  cursor: help;
+}
+/* 强制：必须/严禁/不应/不得/应 —— 法定必须执行，视觉最重 */
+.cn-modal-must {
+  color: var(--terracotta);
+  background: rgba(180, 84, 68, 0.10);
+  box-shadow: inset 0 -2px 0 rgba(180, 84, 68, 0.35);
+}
+/* 推荐：宜/不宜 —— 允许有条件偏离，视觉次之 */
+.cn-modal-should {
+  color: var(--amber);
+  background: rgba(191, 138, 44, 0.10);
+  box-shadow: inset 0 -2px 0 rgba(191, 138, 44, 0.30);
+}
+/* 允许：不可 —— 最弱 */
+.cn-modal-may {
+  color: var(--ink-mute);
+  background: rgba(0, 0, 0, 0.04);
+}
+
+/* ── 历史会话：时间戳 + 查看全部 ──────────────────────────── */
+.cn-hist-time {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--sidebar-text-mute);
+  font-family: var(--font-mono);
+  flex: 0 0 auto;
+  padding-left: 6px;
+}
+/* 悬停时让位给删除按钮 */
+.cn-hist-item:hover .cn-hist-time { display: none; }
+.cn-hist-more {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--sidebar-text-mute);
+  font-size: 11px;
+  font-family: inherit;
+  text-align: left;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: color .14s;
+}
+.cn-hist-more:hover { color: var(--sidebar-text); }

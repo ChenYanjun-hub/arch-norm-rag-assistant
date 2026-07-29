@@ -27,6 +27,7 @@ from fastapi import APIRouter, HTTPException
 from sse_starlette.sse import EventSourceResponse
 
 from app.models.schemas import ChatRequest
+from app.services.scenario import MAX_QUERY_LEN
 from app.rag.pipeline import run_rag_sync
 
 logger = logging.getLogger(__name__)
@@ -40,8 +41,10 @@ async def chat(req: ChatRequest) -> EventSourceResponse:
 
     if not req.query or not req.query.strip():
         raise HTTPException(status_code=400, detail="query 不能为空")
-    if len(req.query) > 500:
-        raise HTTPException(status_code=400, detail="query 超过 500 字符")
+    if len(req.query) > MAX_QUERY_LEN:
+        raise HTTPException(
+            status_code=400, detail=f"query 超过 {MAX_QUERY_LEN} 字符"
+        )
 
     def event_stream():
         """把 pipeline 的 dict 事件转为 SSE 'data: {json}' 帧。"""

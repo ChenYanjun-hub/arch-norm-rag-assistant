@@ -6,7 +6,7 @@ W3 D5 完整版（本次升级）：补 input_empty / input_too_long / sensitive
 
 判定优先级（自上而下短路，CLAUDE.md E.4）：
     1. input_empty       —— 空字符串
-    2. input_too_long    —— 超 500 字
+    2. input_too_long    —— 超 MAX_QUERY_LEN 字
     3. sensitive         —— 涉及规避审查 / 绕过审批
     4. deprecated        —— 涉及已废止规范号
     5. chitchat          —— 闲聊
@@ -35,7 +35,7 @@ ScenarioType = Literal[
 ]
 
 # 输入长度上限（CLAUDE.md D.2 + pipeline 一致）
-MAX_QUERY_LEN = 500
+MAX_QUERY_LEN = 4000
 
 # ── 敏感问题关键词（涉及规避 / 绕过审查）──
 # 注意：宁错漏不错杀。CLAUDE.md 红线 4：不写 chunks 之外的"建议"

@@ -33,6 +33,43 @@ const SAMPLE_QUERIES = [
   '建筑抗震设防烈度如何确定？',
 ]
 
+/**
+ * 按标准层级归类本次回答引用了哪些规范（国标 / 行标 / 地标）。
+ * 层级来自 spec_code 前缀：GB=国标，JGJ/CJJ/WW/建标=行标，DB=地标。
+ * 同一部规范被引多条只计 1 部。
+ */
+function summarizeCitationTiers(cites: Citation[]): { label: string; count: number }[] {
+  const tierOf = (code: string): string => {
+    const c = (code || '').replace(/\s/g, '').toUpperCase()
+    if (c.startsWith('DB')) return '地标'
+    if (c.startsWith('GB')) return '国标'
+    return '行标'
+  }
+  const seen = new Map<string, Set<string>>()
+  for (const c of cites) {
+    const t = tierOf(c.spec_code)
+    if (!seen.has(t)) seen.set(t, new Set())
+    seen.get(t)!.add((c.spec_code || '').replace(/\s/g, '').toUpperCase())
+  }
+  // 固定顺序：国标 → 行标 → 地标（效力从高到低）
+  return ['国标', '行标', '地标']
+    .filter((t) => seen.has(t))
+    .map((t) => ({ label: t, count: seen.get(t)!.size }))
+}
+
+/** 相对时间：刚刚 / N 分钟前 / HH:MM / 昨天 */
+function formatRelTime(ts: number): string {
+  if (!ts) return ''
+  const diffMin = Math.floor((Date.now() - ts) / 60000)
+  if (diffMin < 1) return '刚刚'
+  if (diffMin < 60) return `${diffMin} 分钟前`
+  const d = new Date(ts)
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
+  const dayDiff = Math.round((startOfDay(new Date()) - startOfDay(d)) / 86400000)
+  const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  return dayDiff === 0 ? hhmm : dayDiff === 1 ? '昨天' : `${d.getMonth() + 1}月${d.getDate()}日`
+}
+
 /** 从示例池随机抽 n 条（空态每次进入 / 点"换一批"重抽）*/
 function pickSamples(n = 4): string[] {
   return [...SAMPLE_QUERIES].sort(() => Math.random() - 0.5).slice(0, n)
@@ -107,6 +144,9 @@ export function ChatPage() {
   const citations: Citation[] = lastAssistant?.citations ?? []
   const lastAssistantId = lastAssistant?.id ?? null
 
+  // 本次回答时间：消息无时间戳，用当前会话 updatedAt（每次消息更新都会刷新，口径准确）
+  const lastAnswerAt = conversations.find((c) => c.id === activeId)?.updatedAt ?? 0
+
   const userQueryTitle =
     [...messages].reverse().find((m) => m.role === 'user')?.content?.slice(0, 50) ??
     '建景规·助手 — 设计规范智能查询'
@@ -176,13 +216,25 @@ export function ChatPage() {
               </span>
             </div>
             <div className="cn-topbar-sub">
-              覆盖{coverageDomains} {domainCount} 类 · {totalSpecs} 部规范 ·{' '}
-              {totalChunks} 条条文
-              {citations.length > 0 && (
+              {citations.length > 0 ? (
+                // 有答案时：显示「本次回答」的引用构成（比全局语料统计更有信息量）
                 <>
-                  {' · '}
                   <span style={{ fontFamily: 'var(--font-mono)' }}>{citations.length}</span>{' '}
                   条引用
+                  {summarizeCitationTiers(citations).map((t, i) => (
+                    <span key={t.label}>
+                      {i === 0 ? ' · 涉及' : ' · '}
+                      {t.label}{' '}
+                      <span style={{ fontFamily: 'var(--font-mono)' }}>{t.count}</span> 部
+                    </span>
+                  ))}
+                  {lastAnswerAt ? ` · ${formatRelTime(lastAnswerAt)}` : ''}
+                </>
+              ) : (
+                // 空态：显示全局语料覆盖（让用户知道能查什么）
+                <>
+                  覆盖{coverageDomains} {domainCount} 类 · {totalSpecs} 部规范 ·{' '}
+                  {totalChunks} 条条文
                 </>
               )}
             </div>

@@ -20,7 +20,46 @@ interface Props {
   onFollowUp?: (q: string) => void
 }
 
-/** 把 token 文本里的 [N] 转换成 cn-cite chip */
+/**
+ * 强制性用语分级（红线 3 的可视化）——与后端 `post_filter.MODAL_VERBS` 同一套定义，
+ * 长度从长到短匹配，避免"不应"被切成"不"+"应"。
+ *   强制 must   ：必须 / 严禁 / 不应 / 不得 / 应
+ *   推荐 should ：宜 / 不宜
+ *   允许 may    ：不可（单字"可"不高亮——可以/可能/认可 误报率太高，且法律效力最弱）
+ */
+const MODAL_TIERS: Record<string, 'must' | 'should' | 'may'> = {
+  必须: 'must',
+  严禁: 'must',
+  不应: 'must',
+  不得: 'must',
+  应: 'must',
+  不宜: 'should',
+  宜: 'should',
+  不可: 'may',
+}
+const MODAL_WORDS = Object.keys(MODAL_TIERS).sort((a, b) => b.length - a.length)
+
+// 单字"应/宜"是常用字，需上下文守卫，否则会把 应用/响应/宜居/适宜 误标成强条用语
+const GUARD_PREV: Record<string, string> = {
+  应: '响供适反顺答呼相感效理',
+  宜: '适便事',
+}
+const GUARD_NEXT: Record<string, string> = {
+  应: '用该当对答付急届变邀有力',
+  宜: '人居',
+}
+
+function isFalseModal(word: string, text: string, at: number): boolean {
+  if (word.length > 1) return false // 多字量词（不应/必须…）无歧义
+  const prev = at > 0 ? text[at - 1] : ''
+  const next = at + word.length < text.length ? text[at + word.length] : ''
+  return (
+    (!!prev && (GUARD_PREV[word] ?? '').includes(prev)) ||
+    (!!next && (GUARD_NEXT[word] ?? '').includes(next))
+  )
+}
+
+/** 把文本里的 [N] 转成引用 chip、强制性用语转成分级标记 */
 function renderWithCitations(
   text: string,
   activeCite?: number | null,
@@ -28,12 +67,36 @@ function renderWithCitations(
 ): React.ReactNode[] {
   const parts: React.ReactNode[] = []
   let lastIndex = 0
-  // 仅匹配 1-2 位脚标号，与后端 dangling 检测口径一致（W5 D5）：
+  // 一趟扫描同时处理：引用角标 + 强制性用语
+  // 角标仅匹配 1-2 位（与后端 dangling 口径一致，W5 D5）：
   // 避免把「建标[2015]273号」这类年号/文号误渲染成可点引用角标。
-  const re = /\[(\d{1,2})\]/g
+  const re = new RegExp(`\\[(\\d{1,2})\\]|(${MODAL_WORDS.join('|')})`, 'g')
   let m: RegExpExecArray | null
   let key = 0
   while ((m = re.exec(text)) !== null) {
+    // 命中强制性用语分支
+    if (m[2] !== undefined) {
+      const word = m[2]
+      if (isFalseModal(word, text, m.index)) continue // 误报守卫：应用/宜居…跳过
+      if (m.index > lastIndex) parts.push(text.slice(lastIndex, m.index))
+      parts.push(
+        <mark
+          className={`cn-modal cn-modal-${MODAL_TIERS[word]}`}
+          key={`modal-${key++}-${m.index}`}
+          title={
+            MODAL_TIERS[word] === 'must'
+              ? '强制性用语：必须执行'
+              : MODAL_TIERS[word] === 'should'
+                ? '推荐性用语：宜执行，允许有条件偏离'
+                : '允许性用语'
+          }
+        >
+          {word}
+        </mark>,
+      )
+      lastIndex = m.index + word.length
+      continue
+    }
     if (m.index > lastIndex) {
       parts.push(text.slice(lastIndex, m.index))
     }
