@@ -310,6 +310,34 @@ def build_verify_messages(answer: str, chunks_block: str) -> list[dict[str, str]
 
 
 # ──────────────────────────────────────────────
+# Router 模糊区判定（agent 调度 · 廉价规则打确定区，LLM 只兜规则分不开的模糊区）
+# 规则能 100% 分对"目录/条文/状态"和明确的并列复合题，但"X的设计要求有哪些"这类
+# 词法上与真发散题无法区分（评测实证：误触发全集中在此），故只对这一小撮升级到 LLM。
+SYSTEM_PROMPT_ROUTE_JUDGE = """\
+你是查询分流判定器。判断用户的规范查询属于哪一类，只输出一个词。
+
+- broad：答案会横跨**多个不同规范主题**，需要拆成子问题分别检索。
+  例："城市新区的道路建设有什么规范要求"（跨红线/绿化/照明/交通）
+- single：只问**一个**规范要点，一次检索即可答全，哪怕措辞是"有哪些要求"。
+  例："无障碍坡道的设计要求有哪些"（坡道一条条文即可覆盖）、"填方路基对填料的最大粒径有什么要求"
+
+判定要点：看答案是否需要跨多个**不同主题的规范条文**；只是同一条文里的多个小点，算 single。
+只输出 broad 或 single，不要解释。
+"""
+
+USER_PROMPT_ROUTE_JUDGE_TEMPLATE = """查询：{query}
+判定（broad 或 single）："""
+
+
+def build_route_judge_messages(query: str) -> list[dict[str, str]]:
+    """构造 router 模糊区判定的 chat messages。"""
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT_ROUTE_JUDGE},
+        {"role": "user", "content": USER_PROMPT_ROUTE_JUDGE_TEMPLATE.format(query=query.strip())},
+    ]
+
+
+# ──────────────────────────────────────────────
 # 工具调用 Agent（agentic RAG · ReAct / function-calling · 攻精确查表类查询）
 # 向量检索弱在"精确条文定位 / 目录导航 / 现行状态"这类元信息查询；给 agent 工具去查更准。
 SYSTEM_PROMPT_TOOL_AGENT = """\

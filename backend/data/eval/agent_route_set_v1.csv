@@ -1,0 +1,49 @@
+id,query,expected_route,category,difficulty,note
+R001,你收录了哪些消防规范？,tool,catalog,clear,
+R002,规范库里有哪些景观类规范？,tool,catalog,clear,
+R003,你的规范库收录了多少部规范？,tool,catalog,clear,
+R004,有哪些市政规范？,tool,catalog,clear,
+R005,给我看下规范清单,tool,catalog,clear,
+R006,GB 50180-2018 第5.0.3条的原文是什么？,tool,clause,clear,
+R007,GB 55037-2022 4.3.16 讲了什么？,tool,clause,clear,
+R008,JGJ 39-2016 第3.1.3条怎么写的？,tool,clause,clear,
+R009,CJJ/T 75-2023 表3.0.2 的内容,tool,clause,clear,
+R010,GB 50016-2014 还是现行有效的吗？,tool,status,clear,
+R011,GB 50180-2018 作废了吗？,tool,status,clear,
+R012,JGJ 39-2016 是否现行？,tool,status,clear,
+R013,城市新区的道路建设有什么规范要求？,decompose,broad,clear,发散题·答案跨红线/绿化/照明/交通
+R014,城市地下道路设计要满足哪些基本要求？,decompose,broad,clear,
+R015,建筑安全疏散出口的数量、位置和宽度应考虑哪些因素？,decompose,compound,clear,三个维度
+R016,高层办公建筑的耐火等级和防火分区面积要求？,decompose,compound,clear,
+R017,居住区配套幼儿园的服务半径和楼板耐火极限双重要求？,decompose,compound,clear,跨规范
+R018,城市道路两侧绿地的设计宽度和种植要求？,decompose,compound,clear,
+R019,社区卫生服务中心的服务半径和建设规模要求？,decompose,compound,clear,
+R020,新建医院的建筑密度上限和容积率要求？,decompose,compound,clear,
+R021,城市人均公园绿地面积和公园绿地服务半径覆盖率的强制性要求？,decompose,compound,clear,
+R022,养老设施建筑老年人用房的耐火等级和抗震设防要求？,decompose,compound,clear,
+R023,广场用地的硬质铺装比例和绿地率要求？,decompose,compound,clear,
+R024,救灾干道和疏散主通道的最小宽度要求？,decompose,compound,clear,
+R025,消防车道净宽和净高要求？,decompose,compound,borderline,两维度但同属一条条文
+R026,绿地率和绿化覆盖率有什么区别？,decompose,compound,borderline,需分别查两个定义再对比
+R027,防火墙的耐火极限要求是多少？,plain,single,clear,
+R028,居住区内绿地率的下限要求？,plain,single,clear,
+R029,住宅卧室的最小使用面积是多少？,plain,single,clear,
+R030,什么是公园绿地？,plain,single,clear,定义类
+R031,居住区路网密度的最低要求？,plain,single,clear,
+R032,高层民用建筑分类标准？,plain,single,clear,
+R033,居住街坊集中绿地最小宽度要求？,plain,single,clear,
+R034,主干路分车绿带的最小宽度？,plain,single,clear,
+R035,办公建筑的耐火等级最低要求？,plain,single,clear,
+R036,中小学校的最低规模是多少班？,plain,single,clear,
+R037,民用建筑层数划分中的高层建筑指什么？,plain,single,clear,
+R038,小学服务半径 600m 是否符合国标？,plain,single,clear,合规判定类
+R039,居住区规划绿地率 32% 是否符合国标新区要求？,plain,single,clear,合规判定类
+R040,"""风景园林""在规范中如何定义？",plain,single,clear,定义类
+R041,幼儿园园址选择对服务半径有什么要求？,plain,single,borderline,措辞像发散实为单点
+R042,填方路基对填料的最大粒径有什么要求？,plain,single,borderline,措辞像发散实为单点
+R043,城市基础地理信息系统对运行稳定性有什么要求？,plain,single,borderline,措辞像发散实为单点
+R044,中等职业学校的选址布局有什么要求？,plain,single,borderline,措辞像发散实为单点
+R045,建筑采光设计中眩光控制措施有哪些？,plain,single,borderline,单一主题的枚举
+R046,民用建筑无障碍通行设施有哪些类型？,plain,single,borderline,单一概念的类型枚举
+R047,无障碍坡道的设计要求有哪些？,plain,single,borderline,单一对象的设计要求
+R048,LED 直流电源的选择有哪些要求？,plain,single,borderline,措辞像发散实为单点

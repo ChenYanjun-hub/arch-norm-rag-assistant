@@ -36,6 +36,8 @@ from app.core.config import (
     RERANK_ENABLED,
     RERANK_MIN_SCORE,
     RETRIEVAL_CONFIG,
+    ROUTER_ENABLED,
+    ROUTER_LLM_ESCALATION,
     TOOL_AGENT_ENABLED,
 )
 from app.core.prompts import (
@@ -154,9 +156,26 @@ def run_rag_sync(
         }
         return
 
-    # ── W7 agent ③：工具调用 Agent 前置路由（默认关）──────────────
+    # ── W7 Agent Router：一次规则路由决定本轮走哪条 agent 路径（~0ms、零 LLM 成本）──
+    # 解决"三个 agent 各自对每条 query 收 LLM 税、只能默认关"的问题：
+    # 简单题走 plain（零额外开销），只有被路由命中的 query 才付 agent 成本。
+    agent_route = "plain"
+    route_reason = "router 未启用"
+    if ROUTER_ENABLED:
+        try:
+            from app.services.agent_router import resolve_route
+            _r = resolve_route(query, allow_llm=ROUTER_LLM_ESCALATION)
+            agent_route, route_reason = _r["route"], _r["reason"]
+            logger.info(f"[pipeline] agent 路由 → {agent_route}（{route_reason}）")
+        except Exception as e:
+            logger.warning(f"[pipeline] 路由异常，降级 plain: {e}")
+    else:
+        # router 关掉时退回旧行为：各 flag 无条件生效（保留向后兼容）
+        agent_route = "tool" if TOOL_AGENT_ENABLED else "plain"
+
+    # ── W7 agent ③：工具调用 Agent（由 router 判定为查表类才走）──────
     # 查表/元信息类查询（目录导航/精确条文/现行状态）走工具作答；非查表类回退常规 RAG。
-    if TOOL_AGENT_ENABLED:
+    if TOOL_AGENT_ENABLED and agent_route == "tool":
         try:
             from app.rag.tool_agent import run_tool_agent
             tool_res = run_tool_agent(query)
@@ -219,7 +238,8 @@ def run_rag_sync(
     # 价值在生成侧「答得全」：发散题单次检索只覆盖一个子话题，分解后覆盖全（实证见 devlog）。
     decompose_used = False
     decompose_subs: list[str] = []
-    if QUERY_DECOMPOSE_ENABLED:
+    # router 判定为发散/复合题才付分解的 LLM 成本（router 关时退回旧行为：无条件尝试）
+    if QUERY_DECOMPOSE_ENABLED and (agent_route == "decompose" or not ROUTER_ENABLED):
         try:
             from app.rag.query_decomposer import decompose_query
             _dq = decompose_query(query)

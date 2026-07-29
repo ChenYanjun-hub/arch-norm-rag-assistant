@@ -147,6 +147,17 @@ TOOL_AGENT_ENABLED = os.getenv("TOOL_AGENT_ENABLED", "false").lower() in (
 )
 TOOL_AGENT_TIMEOUT_SECONDS = float(os.getenv("TOOL_AGENT_TIMEOUT_SECONDS", "8.0"))
 
+# Agent Router（W7 · agent 调度层）：规则路由默认全开（0ms、零成本）
+# LLM 升级只对"规则分不开的模糊区"生效（评测实证：误触发全集中在该区），默认关。
+ROUTER_ENABLED = os.getenv("ROUTER_ENABLED", "true").lower() in ("1", "true", "yes")
+ROUTER_LLM_ESCALATION = os.getenv("ROUTER_LLM_ESCALATION", "false").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+ROUTER_LLM_TIMEOUT_SECONDS = float(os.getenv("ROUTER_LLM_TIMEOUT_SECONDS", "3.0"))
+
+
 # Reranker 输入候选数（W3 D4 加）⚠️ 默认 20 = baseline
 # W3 D4 4 组合实验：
 #   ck=20, pf=text_only  : Hit@5 loose 50.0% (baseline)
