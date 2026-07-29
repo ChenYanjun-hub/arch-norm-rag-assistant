@@ -7,6 +7,7 @@ import { Sidebar } from '../components/Sidebar'
 import { RightPanel } from '../components/RightPanel'
 import { InputBar } from '../components/InputBar'
 import { getStats } from '../lib/apiClient'
+import { downloadReport } from '../lib/exportReport'
 import type { Citation, CorpusStats, SpecBrief } from '../types/chat'
 
 // 示例池（覆盖 6 域）；空态每次随机抽 N 条展示
@@ -275,6 +276,18 @@ export function ChatPage() {
             </div>
           </div>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
+            {/* W7 导出报告：把可追溯引用变成可交付物（Markdown，可粘进设计说明）*/}
+            {activeConv && messages.length > 0 && (
+              <button
+                className="cn-msg-tool"
+                style={{ padding: '6px 10px' }}
+                onClick={() => downloadReport(activeConv, currentProject ?? null)}
+                disabled={isStreaming}
+                title="导出为 Markdown 报告（含规范号、条文号、页码、原文摘引，可粘进设计说明）"
+              >
+                ↓ 导出报告
+              </button>
+            )}
             {messages.length > 0 && (
               <button
                 className="cn-msg-tool"
