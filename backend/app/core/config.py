@@ -131,21 +131,31 @@ QUERY_DECOMPOSE_TIMEOUT_SECONDS = float(os.getenv("QUERY_DECOMPOSE_TIMEOUT_SECON
 # 最多拆几个子问题（不含原 query）
 QUERY_DECOMPOSE_MAX_SUBQ = int(os.getenv("QUERY_DECOMPOSE_MAX_SUBQ", "4"))
 
-# 引用核验 verifier（agentic RAG · W7 agent 深化 ②）：默认关（W7 Router 后仍暂缓）
-# ⚠️ 与 tool/decompose 不同，verifier 不适合默认开：它对**每个答案**都要加一次核验调用
-#    （Router 无法帮它省——核验的对象是"生成结果"，不是"查询类型"），
-#    且第一版只检测不修复（见 align_numbers 回滚·启示 62），性价比最低。
-#    上线前置条件：① 加触发条件（仅数字/规范号密度高或检索相关度低时核验）
-#                  ② 或做成"检测→打回重生成"闭环，让这次调用产生实际修复价值。
-# 补规则式治理缺口：LLM verifier 核对答案里规范号/条文号/数字/强条是否真在 chunks 有据。
-# 第一版只检测不改写（自动改答案有风险，见 align_numbers 回滚·启示 62）→ 走 metadata + 提示。
+# 引用核验 verifier（agentic RAG · W7 agent 深化 ②）：⭐ W7 改为默认开
+# 补规则式治理缺口：LLM verifier 核对答案里规范号/条文号/数字/强条是否真在 chunks 有据
+# （规则只能查 [N] 角标越界与量词，抓不到"引了一个不存在的规范号"这类语义编造）。
+# 只检测不改写（自动改答案有风险，见 align_numbers 回滚·启示 62）→ 走 metadata + UI 提示。
 # 失败降级"未核验"（grounded=True），绝不阻塞主流程。
-ANSWER_VERIFY_ENABLED = os.getenv("ANSWER_VERIFY_ENABLED", "false").lower() in (
+#
+# 为何能默认开（两处改动，缺一不可）：
+#   1. 把 citations 提前到核验之前 —— 核验产出的是徽章/告警而非答案本身，
+#      不该占用用户等待引用的时间（原顺序让引用白等 ~1.3s）。
+#   2. 预算感知触发（下方 BUDGET_MS）—— 已耗时接近 SLA 上限时跳过。
+#
+# 为何**没有**按"答案特征"筛（原计划的数字/规范号密度）：
+#   在 1802 条存档评测答案上实测——风险答案（dim4/5/7 任一失败）占 22.1%，
+#   而按数字/规范号/量词密度筛，命中集内风险占比最高只到 30.4%。
+#   规范答案几乎都含数字(56%)/规范号(78%)/量词(89%)，特征无区分度 →
+#   筛选换不来有意义的成本节省，只会漏掉风险。故放弃该思路，用预算感知代替。
+ANSWER_VERIFY_ENABLED = os.getenv("ANSWER_VERIFY_ENABLED", "true").lower() in (
     "1",
     "true",
     "yes",
 )
 ANSWER_VERIFY_TIMEOUT_SECONDS = float(os.getenv("ANSWER_VERIFY_TIMEOUT_SECONDS", "6.0"))
+# 预算感知触发：本轮已耗时 ≥ 该值时跳过核验，保 15s 总时延 SLA。
+# 12s 的依据：核验实测 ~1.3s，12+1.3+尾部事件 仍在 15s 内；发散题(实测 14.6s)会被自动跳过。
+ANSWER_VERIFY_BUDGET_MS = float(os.getenv("ANSWER_VERIFY_BUDGET_MS", "12000"))
 
 # 工具调用 Agent（agentic RAG · ReAct/function-calling · W7 agent 深化 ③）：⭐ Router 后默认开
 # 攻精确条文定位/目录导航/现行状态这类"查表/元信息"查询（向量检索弱）。

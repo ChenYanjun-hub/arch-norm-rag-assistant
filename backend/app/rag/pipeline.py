@@ -23,10 +23,12 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from collections.abc import Iterator
 from typing import Any
 
 from app.core.config import (
+    ANSWER_VERIFY_BUDGET_MS,
     ANSWER_VERIFY_ENABLED,
     HYBRID_BM25_TOP_K,
     HYBRID_ENABLED,
@@ -123,6 +125,7 @@ def run_rag_sync(
     # W3 D5：不再硬编码 INPUT_EMPTY/TOO_LONG 走 error；统一交给 scenario 走 fallback
     raw_query = query or ""
     query = raw_query.strip()
+    _t_start = time.time()  # W7：用于核验的预算感知触发
     logger.info(
         f"[pipeline] query={query[:60]!r} "
         f"domain={domain_filter} spec={spec_code_filter} turns={len(history) if history else 0}"
@@ -478,19 +481,37 @@ def run_rag_sync(
         or n_modal_corrections > 0
     )
 
-    # W7 agent ②：引用核验（默认关）— LLM verifier 核对规范号/条文号/数字/强条是否有据
-    # 补规则缺口（dangling 只查 [N] 角标、align 只校量词）；第一版只检测不改写 → 走 metadata。
-    grounding = {"grounded": True, "issues": [], "verified": False}
-    if ANSWER_VERIFY_ENABLED:
-        from app.rag.verifier import verify_grounding
-        _verify_target = aligned_answer if post_filter_touched else full_answer
-        grounding = verify_grounding(_verify_target, kept_payloads)
-
     # citations 在 done 之前下发，让前端可以"答案完→显示引用"
+    # ★ W7：citations 提前到核验之前 —— 核验产出的是徽章/告警，不是答案本身，
+    #   不该占用用户等待引用的时间（原顺序让引用白等 ~1.3s）。
     yield {
         "type": "citations",
         "data": [_build_citation(p) for p in kept_payloads],
     }
+
+    # W7 agent ②：引用核验 — LLM verifier 核对规范号/条文号/数字/强条是否有据。
+    # 补规则缺口（dangling 只查 [N] 角标、align 只校量词）；只检测不改写 → 走 metadata。
+    #
+    # 为什么触发条件不按"答案特征"筛（数字/规范号密度）：
+    #   在 1802 条存档评测答案上实测过——风险答案（dim4/5/7 任一失败）占 22.1%，
+    #   而按数字/规范号/量词密度筛，命中集内的风险占比最高只到 30.4%。
+    #   原因是规范类答案几乎都含数字(56%)、规范号(78%)、量词(89%)，这些特征没有区分度。
+    #   结论：特征筛选换不来有意义的成本节省，只会漏掉风险。
+    #
+    # 改用**预算感知**触发：答案已耗时接近总时延 SLA 时跳过核验（保 15s 上限），
+    # 其余情况一律核验。配合上面把 citations 提前，核验不再延迟用户可见内容。
+    grounding = {"grounded": True, "issues": [], "verified": False}
+    if ANSWER_VERIFY_ENABLED:
+        elapsed_ms = (time.time() - _t_start) * 1000
+        if elapsed_ms >= ANSWER_VERIFY_BUDGET_MS:
+            logger.info(
+                f"[pipeline] 已耗时 {elapsed_ms:.0f}ms ≥ 预算 {ANSWER_VERIFY_BUDGET_MS}ms，"
+                f"跳过引用核验（保总时延 SLA）"
+            )
+        else:
+            from app.rag.verifier import verify_grounding
+            _verify_target = aligned_answer if post_filter_touched else full_answer
+            grounding = verify_grounding(_verify_target, kept_payloads)
     # W5 D4 + W6 D2 + W6 D4 + W7 D1：metadata 事件携带 dangling + post_filter 全链路信息
     # W7 agent ②：+ grounding 核验结果（verified / ok / issues）
     yield {
