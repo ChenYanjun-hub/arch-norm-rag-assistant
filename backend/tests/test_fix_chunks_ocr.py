@@ -27,7 +27,11 @@ _BACKEND = Path(__file__).resolve().parent.parent
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
-from scripts.fix_chunks_ocr import fix_units  # noqa: E402
+from scripts.fix_chunks_ocr import (  # noqa: E402
+    WATERMARK_LINES,
+    fix_units,
+    strip_page_furniture,
+)
 
 
 class TestFixUnitsPositive(unittest.TestCase):
@@ -103,6 +107,88 @@ class TestFixUnitsNegative(unittest.TestCase):
         out, n = fix_units("")
         self.assertEqual(out, "")
         self.assertEqual(n, 0)
+
+
+class TestStripPageFurniture(unittest.TestCase):
+    """页脚水印剥离 —— 关键是"只整行删、绝不改保留行的字符"。"""
+
+    def test_removes_full_watermark_lines(self):
+        out, n_wm, n_pg = strip_page_furniture(
+            "3.0.14 城镇道路养护应采取防尘、降噪措施。\n住房城乡建设部信息公开\n浏览专用"
+        )
+        self.assertEqual(out, "3.0.14 城镇道路养护应采取防尘、降噪措施。")
+        self.assertEqual(n_wm, 2)
+        self.assertEqual(n_pg, 0)
+
+    def test_rejoins_sentence_split_by_watermark(self):
+        """真实缺陷形态：水印把一句规范切两半（GB 55037 11.0.6）。"""
+        out, n_wm, n_pg = strip_page_furniture(
+            "11.0.6 施工所需用火、用电和用气均应符合消\n住房城乡建\n防安全要求\n浏览专用"
+        )
+        self.assertEqual(out, "11.0.6 施工所需用火、用电和用气均应符合消\n防安全要求")
+        self.assertEqual(n_wm, 2)
+
+    def test_removes_page_number_adjacent_to_watermark(self):
+        out, n_wm, n_pg = strip_page_furniture(
+            "…Ⅲ等养护的\n6\n住房城乡建设部信息公开\n浏览专用\n道路宜三日一巡"
+        )
+        self.assertEqual(out, "…Ⅲ等养护的\n道路宜三日一巡")
+        self.assertEqual((n_wm, n_pg), (2, 1))
+
+    def test_keeps_list_number_not_adjacent_to_watermark(self):
+        """条文列项序号必须留 —— 只有紧贴水印的纯数字行才当页码删。"""
+        out, n_wm, n_pg = strip_page_furniture(
+            "4.1.1 应符合下列规定:\n1 第一项内容\n2 第二项内容"
+        )
+        self.assertEqual(out, "4.1.1 应符合下列规定:\n1 第一项内容\n2 第二项内容")
+        self.assertEqual((n_wm, n_pg), (0, 0))
+
+    def test_bare_number_alone_is_kept(self):
+        out, n_wm, n_pg = strip_page_furniture("2.1.5 定义如下\n1\n说明文字")
+        self.assertEqual(out, "2.1.5 定义如下\n1\n说明文字")
+        self.assertEqual((n_wm, n_pg), (0, 0))
+
+    def test_never_touches_real_clause_mentioning_ministry(self):
+        """🔴 红线：正文里提到"住房城乡建设部"的真条文绝不能被删。
+
+        全语料扫描确认存在这样一行（公共美术馆建设标准），只有整行完全等于
+        水印形态才删，所以它必须原样保留。
+        """
+        real = "2017 年国家发展改革委住房城乡建设部印发《关于规范…》"
+        out, n_wm, n_pg = strip_page_furniture(real)
+        self.assertEqual(out, real)
+        self.assertEqual((n_wm, n_pg), (0, 0))
+
+    def test_whitelist_contains_no_substring_of_real_text(self):
+        """白名单任一形态都不能是"包含式"匹配 —— 用整行相等，故长正文安全。"""
+        real = "由住房城乡建设部批准发布，自2022年1月1日起实施。"
+        self.assertNotIn(real.strip(), WATERMARK_LINES)
+        out, _, _ = strip_page_furniture(real)
+        self.assertEqual(out, real)
+
+    def test_truncated_watermark_fragments_removed(self):
+        """OCR 把水印截断成残片（住房城乡建 / 部信息公开 / 信息公开）也要删。"""
+        for frag in ("住房城乡建", "部信息公开", "信息公开", "住房城乡建设部"):
+            out, n_wm, _ = strip_page_furniture(f"正文一\n{frag}\n正文二")
+            self.assertEqual(out, "正文一\n正文二", f"未删残片 {frag}")
+            self.assertEqual(n_wm, 1)
+
+    def test_indentation_and_trailing_space_tolerated(self):
+        """真实数据里水印行带前后空格（CJJ 193-2012）。"""
+        out, n_wm, _ = strip_page_furniture("正文\n        住房城乡建设部信息公开 \n正文二")
+        self.assertEqual(out, "正文\n正文二")
+        self.assertEqual(n_wm, 1)
+
+    def test_clean_text_unchanged(self):
+        clean = "5.0.3 幼儿园服务半径不宜大于300m。\n1 规模宜为6~12班。"
+        out, n_wm, n_pg = strip_page_furniture(clean)
+        self.assertEqual(out, clean)
+        self.assertEqual((n_wm, n_pg), (0, 0))
+
+    def test_empty(self):
+        out, n_wm, n_pg = strip_page_furniture("")
+        self.assertEqual(out, "")
+        self.assertEqual((n_wm, n_pg), (0, 0))
 
 
 if __name__ == "__main__":
