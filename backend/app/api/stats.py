@@ -17,8 +17,9 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from app.core.config import settings
-from app.models.schemas import CorpusStats, DomainStat, SpecBrief
+from app.models.schemas import CorpusStats, DomainStat, SpecBrief, SubcategoryStat
 from app.services.spec_status import get_spec_status
+from app.services.spec_taxonomy import get_subcategory, group_by_subcategory
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -36,6 +37,8 @@ def _compute_stats() -> CorpusStats:
     # domain → {spec_code: spec_name}（spec_name 取自入库元数据，干净，可直接展示）
     names_by_domain: dict[str, dict[str, str]] = defaultdict(dict)
     chunks_by_domain: dict[str, int] = defaultdict(int)
+    # spec_code → chunk 数（二级分组要按组汇总条文数）
+    chunks_by_spec: dict[str, int] = defaultdict(int)
 
     for jf in chunks_dir.glob("*.json"):
         if jf.name.startswith("_"):
@@ -55,6 +58,7 @@ def _compute_stats() -> CorpusStats:
             # 首见即记名（同一规范各 chunk 的 spec_name 一致）
             names_by_domain[domain].setdefault(spec_code, ck.get("spec_name") or spec_code)
             chunks_by_domain[domain] += 1
+            chunks_by_spec[spec_code] += 1
 
     domains = []
     for d, code_names in names_by_domain.items():
@@ -64,10 +68,26 @@ def _compute_stats() -> CorpusStats:
                     spec_code=code,
                     spec_name=name,
                     status=get_spec_status(code)["status"],
+                    subcategory=get_subcategory(code) or "",
                 )
                 for code, name in code_names.items()
             ),
             key=lambda s: s.spec_code,
+        )
+        # 二级分组：仅规范数达阈值的域才分（spec_taxonomy 判定），否则 None → 前端平铺
+        grouped = group_by_subcategory(d, specs)
+        subcategories = (
+            [
+                SubcategoryStat(
+                    name=name,
+                    spec_count=len(group),
+                    chunk_count=sum(chunks_by_spec[s.spec_code] for s in group),
+                    specs=group,
+                )
+                for name, group in grouped
+            ]
+            if grouped is not None
+            else None
         )
         domains.append(
             DomainStat(
@@ -75,6 +95,7 @@ def _compute_stats() -> CorpusStats:
                 spec_count=len(code_names),
                 chunk_count=chunks_by_domain[d],
                 specs=specs,
+                subcategories=subcategories,
             )
         )
     # 按 chunk 数降序：规划 > 建筑 > 景观 > 消防（与前端展示顺序一致）

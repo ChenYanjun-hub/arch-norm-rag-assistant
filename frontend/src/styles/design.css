@@ -151,6 +151,36 @@
   content: ''; position: absolute; left: -9px; top: 6px; bottom: 6px; width: 2px;
   background: var(--amber); border-radius: 2px;
 }
+/* NAV 二级分类行（域 → 二级分类 → 规范；把 29 行平铺压到 ≤7 行）*/
+.cn-sub-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  color: var(--sidebar-text);
+  font-size: 12.5px;
+  transition: background .14s;
+}
+.cn-sub-item:hover { background: var(--sidebar-soft); }
+.cn-sub-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cn-sub-item .cn-side-meta {
+  margin-left: auto; color: var(--sidebar-text-mute);
+  font-size: 10.5px; font-variant-numeric: tabular-nums;
+}
+/* 整组一键限定检索范围（默认低调，选中后琥珀色高亮）*/
+.cn-sub-pick {
+  flex: 0 0 auto;
+  background: none; border: none; cursor: pointer;
+  padding: 0 2px; font-size: 11px; line-height: 1;
+  color: var(--sidebar-text-mute);
+  opacity: 0; transition: opacity .14s, color .14s;
+}
+.cn-sub-item:hover .cn-sub-pick { opacity: 1; }
+.cn-sub-pick:hover { color: var(--amber); }
+.cn-sub-pick.is-active { opacity: 1; color: var(--amber); }
+
 .cn-spec-dot { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; }
 .cn-spec-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .cn-spec-code { flex: 0 0 auto; font-family: var(--font-mono); font-size: 9.5px; color: var(--sidebar-text-mute); }

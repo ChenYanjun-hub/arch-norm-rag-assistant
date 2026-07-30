@@ -103,6 +103,15 @@ export function ChatPage() {
         ? prev.filter((s) => s.spec_code !== sp.spec_code)
         : [...prev, sp],
     )
+  // 二级分类一键限定：整组已全选 → 全撤；否则补齐缺的（不动组外已选的规范）
+  const toggleSpecGroup = (group: SpecBrief[]) =>
+    setSpecFilters((prev) => {
+      const codes = new Set(group.map((s) => s.spec_code))
+      const allOn = group.every((s) => prev.some((p) => p.spec_code === s.spec_code))
+      if (allOn) return prev.filter((p) => !codes.has(p.spec_code))
+      const missing = group.filter((s) => !prev.some((p) => p.spec_code === s.spec_code))
+      return [...prev, ...missing]
+    })
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // 拉规范库语料统计（动态计数）；失败则各组件回退默认值
@@ -167,10 +176,11 @@ export function ChatPage() {
 
   // 规范库覆盖（动态计数，接口未就绪时回退）
   const coverageDomains =
-    stats?.domains.map((d) => d.domain).join(' / ') ?? '规划 / 建筑 / 景观 / 消防'
-  const domainCount = stats?.domain_count ?? 4
-  const totalSpecs = stats?.total_specs ?? 39
-  const totalChunks = stats?.total_chunks ?? 4773
+    stats?.domains.map((d) => d.domain).join(' / ') ??
+    '规划 / 市政 / 建筑 / 景观 / 结构 / 消防'
+  const domainCount = stats?.domain_count ?? 6
+  const totalSpecs = stats?.total_specs ?? 89
+  const totalChunks = stats?.total_chunks ?? 10785
 
   return (
     <div
@@ -196,6 +206,7 @@ export function ChatPage() {
         onSelectConversation={switchConversation}
         onDeleteConversation={deleteConversation}
         onSelectSpec={toggleSpec}
+        onSelectSpecGroup={toggleSpecGroup}
         activeSpecCodes={specFilters.map((s) => s.spec_code)}
       />
 

@@ -89,6 +89,20 @@ class SpecBrief(BaseModel):
     status: Literal["现行", "已废止", "局部废止", "即将实施"] = Field(
         "现行", description="规范现行状态（复用 spec_status）"
     )
+    subcategory: str = Field(
+        "", description="二级分类名（spec_taxonomy 映射；不细分的域为空串）"
+    )
+
+
+class SubcategoryStat(BaseModel):
+    """域内二级分类的统计（侧栏二级分组 + 一键限定范围用）。"""
+
+    name: str = Field(..., description="二级分类名，如 居住社区/道路工程")
+    spec_count: int = Field(..., description="该组规范部数")
+    chunk_count: int = Field(..., description="该组条文 chunk 数")
+    specs: list[SpecBrief] = Field(
+        default_factory=list, description="该组规范清单（按标准号排序）"
+    )
 
 
 class DomainStat(BaseModel):
@@ -99,6 +113,13 @@ class DomainStat(BaseModel):
     chunk_count: int = Field(..., description="该域条文 chunk 数")
     specs: list[SpecBrief] = Field(
         default_factory=list, description="该域规范清单（按标准号排序）"
+    )
+    subcategories: list[SubcategoryStat] | None = Field(
+        None,
+        description=(
+            "二级分组。None = 该域不细分（规范数低于阈值），前端保持平铺；"
+            "非 None 时前端按此渲染二级层，specs 仍保留供跨域搜索用"
+        ),
     )
 
 

@@ -2,7 +2,13 @@
 // 规范分类计数从 GET /api/stats 动态读取（接口未就绪时回退默认值）
 
 import { useState } from 'react'
-import type { Conversation, CorpusStats, Project, SpecBrief } from '../types/chat'
+import type {
+  Conversation,
+  CorpusStats,
+  Project,
+  SpecBrief,
+  SubcategoryStat,
+} from '../types/chat'
 
 interface Props {
   onNewChat?: () => void
@@ -26,6 +32,8 @@ interface Props {
   onDeleteConversation?: (id: string) => void
   /** 点击某部规范 → 切换该规范的限定（多选 toggle）*/
   onSelectSpec?: (spec: SpecBrief) => void
+  /** 点二级分类的「限定」→ 整组一键加入/移出限定 */
+  onSelectSpecGroup?: (specs: SpecBrief[]) => void
   /** 当前限定的规范号列表（高亮）*/
   activeSpecCodes?: string[]
 }
@@ -48,7 +56,6 @@ const STATUS_COLOR: Record<string, string> = {
   即将实施: 'var(--indigo)',
 }
 
-// 接口未就绪时的回退（与入库实测一致），避免首屏闪空
 /** 历史会话默认展示条数，超出折叠到「查看全部」*/
 const HISTORY_PREVIEW_N = 6
 
@@ -70,11 +77,56 @@ function formatRelTime(ts: number): string {
   return `${d.getMonth() + 1}月${d.getDate()}日`
 }
 
+/** 单条规范行（平铺 / 二级分组下复用同一渲染，避免两份走样）*/
+function SpecRow({
+  sp,
+  active,
+  onSelect,
+  indent = false,
+}: {
+  sp: SpecBrief
+  active: boolean
+  onSelect?: (sp: SpecBrief) => void
+  /** 二级分组下再缩进一级，让层级关系可读 */
+  indent?: boolean
+}) {
+  return (
+    <div
+      // 缩进只加 18px（8→26）。侧栏 264px 宽，规范名列本来就装不下全名（平铺时
+      // 也只有 86~104px / 需 158~206px，靠 title 悬浮补全）；缩进每多 1px 都直接
+      // 从名字列扣，所以取"层级看得出来"的最小值，不用 38px。
+      className={'cn-spec-row' + (active ? ' is-active' : '')}
+      style={indent ? { paddingLeft: 26 } : undefined}
+      onClick={() => onSelect?.(sp)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onSelect?.(sp)
+        }
+      }}
+      title={`${sp.spec_name} ${sp.spec_code}（点击只查这部）`}
+    >
+      <span
+        className="cn-spec-dot"
+        style={{ background: STATUS_COLOR[sp.status] ?? STATUS_COLOR['现行'] }}
+      />
+      <span className="cn-spec-name">{sp.spec_name}</span>
+      <span className="cn-spec-code">{sp.spec_code}</span>
+    </div>
+  )
+}
+
+// 首屏 /api/stats 未返回前的占位（跟入库实测同步；stats 一到就被覆盖）。
+// 无 specs/subcategories 字段 → 只显示域计数，不显示分类层。
 const FALLBACK_DOMAINS = [
-  { domain: '规划', spec_count: 18 },
-  { domain: '建筑', spec_count: 11 },
-  { domain: '景观', spec_count: 7 },
-  { domain: '消防', spec_count: 3 },
+  { domain: '规划', spec_count: 29 },
+  { domain: '市政', spec_count: 18 },
+  { domain: '建筑', spec_count: 20 },
+  { domain: '景观', spec_count: 12 },
+  { domain: '结构', spec_count: 4 },
+  { domain: '消防', spec_count: 6 },
 ]
 
 export function Sidebar({
@@ -91,11 +143,14 @@ export function Sidebar({
   onSelectConversation,
   onDeleteConversation,
   onSelectSpec,
+  onSelectSpecGroup,
   activeSpecCodes = [],
 }: Props) {
   const domains = stats?.domains ?? FALLBACK_DOMAINS
-  const totalSpecs = stats?.total_specs ?? 39
+  const totalSpecs = stats?.total_specs ?? 89
   const [openDomains, setOpenDomains] = useState<Record<string, boolean>>({})
+  // 二级分类展开态，key = `域/分类名`（不同域可能有同名分类）
+  const [openSubs, setOpenSubs] = useState<Record<string, boolean>>({})
   const [showAllHistory, setShowAllHistory] = useState(false)
   const [creatingProject, setCreatingProject] = useState(false)
   const [newProjName, setNewProjName] = useState('')
@@ -299,6 +354,9 @@ export function Sidebar({
             {domains.map((t) => {
               const open = !!openDomains[t.domain]
               const specs: SpecBrief[] = (t as { specs?: SpecBrief[] }).specs ?? []
+              // null/undefined = 该域不细分（后端按规范数阈值判定），前端保持平铺
+              const subs: SubcategoryStat[] | null =
+                (t as { subcategories?: SubcategoryStat[] | null }).subcategories ?? null
               const toggle = () =>
                 setOpenDomains((s) => ({ ...s, [t.domain]: !s[t.domain] }))
               return (
@@ -330,33 +388,81 @@ export function Sidebar({
                     <span style={{ fontWeight: 500 }}>{t.domain}</span>
                     <span className="cn-side-meta">{t.spec_count}</span>
                   </div>
-                  {open && specs.length > 0 && (
+                  {/* 二级细分（后端 subcategories 为 null 时该域规范少，保持平铺）*/}
+                  {open && subs !== null && subs.length > 0 && (
+                    <div className="cn-spec-list">
+                      {subs.map((sc) => {
+                        const key = `${t.domain}/${sc.name}`
+                        const subOpen = !!openSubs[key]
+                        const allOn =
+                          sc.specs.length > 0 &&
+                          sc.specs.every((s) => activeSpecCodes.includes(s.spec_code))
+                        return (
+                          <div key={key}>
+                            <div
+                              className="cn-sub-item"
+                              onClick={() => setOpenSubs((s) => ({ ...s, [key]: !s[key] }))}
+                              role="button"
+                              tabIndex={0}
+                              aria-expanded={subOpen}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault()
+                                  setOpenSubs((s) => ({ ...s, [key]: !s[key] }))
+                                }
+                              }}
+                              title={`${sc.name} · ${sc.spec_count} 部 / ${sc.chunk_count} 条`}
+                            >
+                              <span
+                                className="cn-side-caret"
+                                style={{ transform: subOpen ? 'rotate(90deg)' : 'none' }}
+                                aria-hidden
+                              >
+                                ▸
+                              </span>
+                              <span className="cn-sub-name">{sc.name}</span>
+                              <span className="cn-side-meta">{sc.spec_count}</span>
+                              {/* 一键把整组加入/移出检索限定（复用已有 spec_code 多选过滤）*/}
+                              <button
+                                className={'cn-sub-pick' + (allOn ? ' is-active' : '')}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  onSelectSpecGroup?.(sc.specs)
+                                }}
+                                title={
+                                  allOn
+                                    ? `取消限定这 ${sc.spec_count} 部`
+                                    : `只在这 ${sc.spec_count} 部规范里查（${sc.chunk_count} 条条文）`
+                                }
+                                aria-label={`限定检索范围为 ${sc.name}`}
+                              >
+                                ⛬
+                              </button>
+                            </div>
+                            {subOpen &&
+                              sc.specs.map((sp) => (
+                                <SpecRow
+                                  key={sp.spec_code}
+                                  sp={sp}
+                                  active={activeSpecCodes.includes(sp.spec_code)}
+                                  onSelect={onSelectSpec}
+                                  indent
+                                />
+                              ))}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                  {open && subs === null && specs.length > 0 && (
                     <div className="cn-spec-list">
                       {specs.map((sp) => (
-                        <div
+                        <SpecRow
                           key={sp.spec_code}
-                          className={
-                            'cn-spec-row' +
-                            (activeSpecCodes.includes(sp.spec_code) ? ' is-active' : '')
-                          }
-                          onClick={() => onSelectSpec?.(sp)}
-                          role="button"
-                          tabIndex={0}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault()
-                              onSelectSpec?.(sp)
-                            }
-                          }}
-                          title={`${sp.spec_name} ${sp.spec_code}（点击只查这部）`}
-                        >
-                          <span
-                            className="cn-spec-dot"
-                            style={{ background: STATUS_COLOR[sp.status] ?? STATUS_COLOR['现行'] }}
-                          />
-                          <span className="cn-spec-name">{sp.spec_name}</span>
-                          <span className="cn-spec-code">{sp.spec_code}</span>
-                        </div>
+                          sp={sp}
+                          active={activeSpecCodes.includes(sp.spec_code)}
+                          onSelect={onSelectSpec}
+                        />
                       ))}
                     </div>
                   )}

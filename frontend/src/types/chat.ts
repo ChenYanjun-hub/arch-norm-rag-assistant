@@ -156,6 +156,16 @@ export interface SpecBrief {
   spec_code: string
   spec_name: string
   status: SpecStatus
+  /** 二级分类名（不细分的域为空串）*/
+  subcategory?: string
+}
+
+/** 域内二级分类（对应后端 SubcategoryStat） */
+export interface SubcategoryStat {
+  name: string
+  spec_count: number
+  chunk_count: number
+  specs: SpecBrief[]
 }
 
 /** 单域统计（对应后端 DomainStat） */
@@ -165,6 +175,11 @@ export interface DomainStat {
   chunk_count: number
   /** 该域规范清单（按标准号排序）*/
   specs?: SpecBrief[]
+  /**
+   * 二级分组。null/undefined = 该域规范数低于细分阈值，保持平铺。
+   * specs 始终保留（跨域搜索仍用平铺清单）。
+   */
+  subcategories?: SubcategoryStat[] | null
 }
 
 /** 语料统计（对应后端 CorpusStats，GET /api/stats）— 前端动态计数 */
