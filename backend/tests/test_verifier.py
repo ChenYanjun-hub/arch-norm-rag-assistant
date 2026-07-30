@@ -56,6 +56,25 @@ class TestBuildChunksBlock(unittest.TestCase):
         self.assertIn("表5.0.3", block)
         self.assertIn("300m", block)
 
+    def test_includes_mandatory_and_page_metadata(self):
+        """强制性/页码来自元数据而非正文——不喂给 verifier 会产生假告警（W7 实测）。"""
+        chunks = [
+            {
+                "spec_code": "GB 55037-2022", "spec_name": "建筑防火通用规范",
+                "clause": "6.1.3", "text": "防火墙的耐火极限不应低于3.00h。",
+                "is_mandatory": True, "page_start": 29,
+            },
+        ]
+        block = _build_chunks_block(chunks)
+        self.assertIn("强制性条文", block)
+        self.assertIn("第29页", block)
+
+    def test_no_meta_marker_when_absent(self):
+        block = _build_chunks_block(
+            [{"spec_code": "X", "spec_name": "Y", "clause": "1.1", "text": "t"}]
+        )
+        self.assertNotIn("（", block)
+
 
 if __name__ == "__main__":
     unittest.main()

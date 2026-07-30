@@ -44,7 +44,17 @@ def _build_chunks_block(chunks: list[dict[str, Any]]) -> str:
         spec_name = p.get("spec_name", "")
         clause = p.get("clause", "")
         text = (p.get("text") or "").replace("\n", " ")[:300]
-        lines.append(f"[{i}] 《{spec_name}》{spec_code} {clause}\n{text}")
+        # W7 修误报：强制性来自 chunk 元数据（is_mandatory），不在正文里。
+        # 不给 verifier 看的话，答案正确标注"（强制性条文）"会被判成"片段中无据"——
+        # 实测确有此假告警。页码同理（答案可能引用页码）。
+        flags: list[str] = []
+        if p.get("is_mandatory"):
+            flags.append("强制性条文")
+        page = p.get("page_start") or p.get("page")
+        if page:
+            flags.append(f"第{page}页")
+        meta = f"（{' · '.join(flags)}）" if flags else ""
+        lines.append(f"[{i}] 《{spec_name}》{spec_code} {clause}{meta}\n{text}")
     return "\n\n".join(lines)
 
 

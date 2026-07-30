@@ -25,7 +25,9 @@ logger = logging.getLogger(__name__)
 
 MODEL_NAME = "BAAI/bge-reranker-v2-m3"
 MAX_LENGTH = 512  # XLM-R 输入上限
-BATCH_SIZE = 8  # 每批 pair 数（20 候选 → 3 批；M 系列 Mac 每批数百 ms）
+# 每批 pair 数。W7 实测（MPS，80 pairs + 长度分桶）：bs=2 5.22s / **bs=4 5.08s** /
+# bs=8 5.24s / bs=16 6.64s → 取 4。注意"大批更快"在此不成立：padding 浪费随批增大。
+BATCH_SIZE = 4
 
 _lock = threading.Lock()
 _instance: "_Reranker | None" = None
@@ -93,12 +95,24 @@ def _compute_scores(
     pairs: list[tuple[str, str]],
     batch_size: int = BATCH_SIZE,
 ) -> list[float]:
-    """对 (query, passage) 对计算相关性 score（sigmoid 后 0~1）。"""
+    """对 (query, passage) 对计算相关性 score（sigmoid 后 0~1）。
+
+    W7 性能优化 —— **长度分桶**（length bucketing）：
+        按 passage 长度排序后再分批，算完还原原序。
+        动机：`padding=True` 会把整批补齐到该批最长序列，长短混批时短序列白算大量 padding。
+        实测（80 pairs，MPS）：原样 bs=8 11.41s → 分桶 bs=4 **5.08s（-55%）**，
+        且分数**逐项完全一致**（最大差异 0.000000）——纯性能改动，无语义风险。
+        这也解释了"MPS 上大批反而更慢"的反直觉现象：批越大，padding 浪费越多。
+    """
     import torch
 
-    all_scores: list[float] = []
-    for i in range(0, len(pairs), batch_size):
-        batch = pairs[i : i + batch_size]
+    # 按 passage 长度升序，使同批序列长度接近 → padding 浪费最小
+    order = sorted(range(len(pairs)), key=lambda i: len(pairs[i][1]))
+    sorted_pairs = [pairs[i] for i in order]
+
+    sorted_scores: list[float] = []
+    for i in range(0, len(sorted_pairs), batch_size):
+        batch = sorted_pairs[i : i + batch_size]
         queries = [p[0] for p in batch]
         passages = [p[1] for p in batch]
         inputs = tokenizer(
@@ -113,7 +127,12 @@ def _compute_scores(
         with torch.no_grad():
             logits = model(**inputs).logits.view(-1).float()
             scores = torch.sigmoid(logits).cpu().tolist()
-        all_scores.extend(scores)
+        sorted_scores.extend(scores)
+
+    # 还原到调用方传入的原始顺序（调用方按下标对齐 candidates，顺序不能错）
+    all_scores = [0.0] * len(pairs)
+    for pos, idx in enumerate(order):
+        all_scores[idx] = sorted_scores[pos]
     return all_scores
 
 
